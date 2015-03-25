@@ -6,7 +6,7 @@ import numpy as np
 from copy import deepcopy
 
 class LGHconfig:
-    def __init__(self,nvector,mvector,Edft):
+    def __init__(self,nvector,mvector,Edft,name=None):
         """Class that contains a surface configuration
         definition to be used with the LGH class
 
@@ -20,6 +20,7 @@ class LGHconfig:
         self.nvector = np.array([int(n) for n in nvector])
         self.mvector = np.array([int(m) for m in mvector])
         self.Edft = Edft
+        self.name = name
 
 
 class LGH:
