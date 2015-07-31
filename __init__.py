@@ -99,12 +99,28 @@ class LGH:
     def maxerror(self):
         maerr = 0
         merr = 0
+        imerr = -1
         for ic, config in enumerate(self.config_list):
             err = self.energy(ic) - config.Eref
             if abs(err) > maerr:
                 maerr=abs(err)
                 merr = err
-        return merr
+                imerr = ic
+        return merr, imerr
+
+    def maxepa(self):
+        """ Calculate the maximum error per adsorbate"""
+        maepa = 0
+        mepa = 0
+        imepa = -1
+        for ic, config in enumerate(self.config_list):
+            epa = (self.energy(ic) - config.Eref) / float(sum(config.nvector))
+            if abs(epa) > maepa:
+                maepa=abs(epa)
+                mepa = epa
+                imepa = ic
+        return mepa, imepa
+
 
     def print_fixpars(self):
         print('Base energy: %s' % self.base)
@@ -136,15 +152,20 @@ class LGH:
                 print('after %i function evaluations' % res.nfev)
                 for ic, config in enumerate(self.config_list):
                     if verbose > 2:
-                        fmt = '  Config {:>3d} {:20} : Err = {:< g}'
-                        print(fmt.format(ic,config.name,
-                                         (self.energy(ic)-config.Eref)))
+                        fmt = '  Config {:>3d} {:20} : Err = {:< g} , Epa = {:< g}'
+                        Err = self.energy(ic)-config.Eref
+                        Epa = Err / float(sum(config.nvector))
+                        print(fmt.format(ic,config.name,Err,Epa))
 
-                print('Maximum error: {}'.format(self.maxerror()))
+                maxerr, iconf = self.maxerror()
+                print('Maximum error: {} (conf. {})'.format(maxerr,iconf))
+                maxerr, iconf = self.maxepa()
+                print('Max. err. per ads.: {} (conf. {})'.format(maxerr,iconf))
                 self.print_fixpars()
             if verbose:
                 self.print_freepars()
-                print('Maxerror : %s' % self.maxerror())
+                maxerr, iconf = self.maxerror()
+                print('Maxerror : {} (conf {})'.format(maxerr,iconf))
         else:
             print('Could not converge!!')
 
