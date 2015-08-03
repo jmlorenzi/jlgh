@@ -13,7 +13,6 @@ DELTA_H_SMALL = 1.0 # Default height over the surface to place adsorbates
 
 zvect = np.array([0.,0.,1.])
 
-
 class UnitCell(object):
     """ Class that contains the basic unit cell for the skeleton structure of the LGH.
     In our standard use case, this means the surface
@@ -22,7 +21,6 @@ class UnitCell(object):
 
         self.atoms = atoms
         self.cell = atoms.cell[:DIM]
-
 
         # Define the default height for the slab
         if h0:
@@ -90,6 +88,35 @@ class Adsorbate(object):
         if max_radius is not None:
             self.max_radius = max_radius
 
+    def __eq__(self,other):
+        if isinstance(other,Adsorbate) and other.name = self.name:
+            return True
+        else:
+            return False
+
+class LGH(object):
+    """
+    Deifinition of the LGH
+
+    The main class for this package, will override the one in __init__ when fully
+    implmeneted
+    """
+    def __init__(self,**kwargs):
+        attributes = ['adsorbate_list','cluster_list','config_list']
+        for key, value in kwargs.items():
+            if key in attributes:
+                setattr(self, key, value)
+
+    def add_adsorbate(self,adsorbate):
+        pass
+
+    def add_cluster(self,cluster):
+        pass
+
+    def add_config(self,config):
+        pass
+
+
 class Configuration(object):
     """
     Defines a configuration instance
@@ -126,6 +153,27 @@ class Configuration(object):
         else:
             raise NotImplementedError('Detecting configurations from atoms'
                                       ' not implemented yet!')
+
+        self.species_list = sorted(list(set([ads_coord[0].name
+                                             for ads_coord in
+                                             self.adsorbates_coords])))
+        self.nspecs = len(self.species_list)
+
+        matrix = np.zeros([size[0],size[1],self.unit_cell.nsites],int)
+        for ads_coord in self.adsorbates_coords:
+            if isinstance(ads_coord[1][2],str):
+                isite = self.unit_cell.sites_list.index(ads_coord[1][2])
+            else:
+                isite = ads_coord[1][2]
+            if matrix[ads_coord[1][0],ads_coord[1][1],isite]:
+                raise ValueError('Site {},{},{} assigned twice!'.format(
+                    ads_coord[1][0],ads_coord[1][1],isite))
+            else:
+                matrix[ads_coord[1][0],ads_coord[1][1],isite] =
+                self.species_list.index(ads_coord[0])
+
+
+
 
     def return_atoms(self):
         """Builds the atoms object that corresponds to the configuration
@@ -164,31 +212,78 @@ class Configuration(object):
             atoms += toadd
         return atoms
 
+    def get_cluster_multiplicity(self,cluster):
+        """
+        Returns the number of times a cluster is repeated in the configuration
+
+        All cluster that have at leaste one of its participating sites within
+        the Configuration unit cell are counted
+
+        Args
+        ---
+
+        cluster (Cluster) : Instance of the Cluster class
+        """
+
+        NREP = 1 # TODO make update with cluster size
+
+        for ix in xrange(-NREP,NREP+1):
+            for iy in xrange(-NREP,NREP+1):
+                for instance in cluster.instance_list:
+
+
+
+
+
+
+
     def __eq__(self,other):
+        ## TODO build this
         return False
 
-    # def identify_clusters(self):
+
+class Cluster(object):
+    """
+    Defines a cluster class to be included in a cluster expansion
+
+    For now, symmetry is NOT automatically taken into account
+    """
+
+    def __init__(self,name,instances_list):
+        """
+        Initialize a cluster class
+
+        Args
+        ---
+        name (str) : identifing name of the cluster
+        instances_list (list[(adsorbate,[dx,dy,site])]) : list of sets of
+            (relative) coordinates that define the cluster
+        """
+        self.name = name
+        self.instances_list = instances_list
 
 
 
-class Lattice(object):
-    def __init__(self,unit_cell,size):
-        self.dim = unit_cell.dim
-        if isinstance( size, list):
-            if len(cell) != dim:
-                raise ValueError('Lattice size and dim incompatible')
-            for x in size:
-                if not isinstance(x, int):
-                    raise TypeError('Lattice size must be integer')
-            self.size = size
-        elif isinstance(size, ( int) ):
-            self.size = ( size,) * 3
-        else:
-            raise TypeError('size of wront type')
 
-        self.volume = unit_cell.nsites
-        for i in range(self.dim):
-            self.volume *= size[i]
 
-    def lattice2number(coord):
-        pass
+# class Lattice(object):
+#     def __init__(self,unit_cell,size):
+#         self.dim = unit_cell.dim
+#         if isinstance( size, list):
+#             if len(cell) != dim:
+#                 raise ValueError('Lattice size and dim incompatible')
+#             for x in size:
+#                 if not isinstance(x, int):
+#                     raise TypeError('Lattice size must be integer')
+#             self.size = size
+#         elif isinstance(size, ( int) ):
+#             self.size = ( size,) * 3
+#         else:
+#             raise TypeError('size of wront type')
+
+#         self.volume = unit_cell.nsites
+#         for i in range(self.dim):
+#             self.volume *= size[i]
+
+#     def lattice2number(coord):
+#         pass
