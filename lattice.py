@@ -1,31 +1,48 @@
 """
-Module used to convert lattice deffinitions to
+Module used to convert lattice definitions to
 the objects used to define the LGH
 """
 
 import ase
 import ase.lattice.surface
+import numpy as np
 
-DIM = 2
-DELTA_H_SMALL
+
+DIM = 2  # We use this as a parameter, but probably will always be fixed
+DELTA_H_SMALL = 1.0 # Default height over the surface to place adsorbates
+
+zvect = np.array([0.,0.,1.])
+
 
 class UnitCell(object):
     """ Class that contains the basic unit cell for the skeleton structure of the LGH.
     In our standard use case, this means the surface
     """
-    def __init__(self, atoms, sites_pos=None, sites_names=None
-                 h0 = None):
+    def __init__(self, atoms, sites_pos=None, sites_names=None,h0 = None):
 
         self.atoms = atoms
         self.cell = atoms.cell[:DIM]
 
+
+        # Define the default height for the slab
+        if h0:
+            self.h0 = h0
+        else:
+            self.h0 = max([at.position[2] for at in self.atoms]) + DELTA_H_SMALL
+
+        self.sites_pos = []
         if sites_pos:
             for isite, site_pos in enumerate(sites_pos):
-                if len(site_pos) != DIM:
-                    raise ValueError('Wrong positon dimension for site nr {:2d}'.format(isite))
+                if len(site_pos) == 2:
+                    self.sites_pos.append(site_pos[0]*self.cell[0] +
+                                          site_pos[1]*self.cell[1] +
+                                          self.h0*zvect)
+                elif len(site_pos) == 3:
+                    self.sites_pos.append(np.array(site_pos))
+                else:
+                    raise ValueError('Wrong positon for site nr {:2d}'.format(isite))
 
         self.nsites = len(sites_pos)
-
         if sites_names:
             if len(sites_names) != self.nsites:
                 raise ValueError('Number of names does not match number of sites')
@@ -36,20 +53,12 @@ class UnitCell(object):
         else:
             self.sites_names = ['site{:02d}'.format(j) for j in xrange(len(self.nsites))]
 
-        if h0:
-            self.h0 = h0
-        else:
-            self.h0 = max([at.position[2] for at in self.atoms]) + DELTA_H_SMALL
-
-
-
 class Adsorbate(object):
     """
     Defines an adsorbate as to be used in the building and interpreting of
     configurations.
     """
-    def __init__(self, name,  atoms, origin_index = 0,
-                 center_pos = [0.,0.,0.], def_height = None, max_radius = None):
+    def __init__(self, name,  atoms, center = 0, max_radius = None):
         """ Initialize an Adsorbate instance
 
         Args:
@@ -57,17 +66,29 @@ class Adsorbate(object):
 
         atoms (ase.atoms.Atoms) : This defines standard (initial) geometry of the species.
 
-        origin_index (int) : The index of the atom to be considered as 'central'. Defaults to 0.
-
-        center_pos (list[float]) : The position of the 'center' of the molecule with
-            respect to the 'center' molecule. Defaults to [0.,0.,0.]
-
-        def_height (float) : The (initial) height at which the center of  adsorbate
-            is to be placed by default.
+        center (array-like or int) : The position of the 'center' of the molecule. It can either be
+            an triplet or the index of the 'center' molecule. Defaults to 0.
 
         max_radius (float) : The maximum radius for which the components of the molecule are to be
             considered bound. Optional, defaults to None, which should be interpreted as inf.
         """
+        self.name = name
+        if isinstance(center, int):
+            self.x0 = atoms.get_positions()[center]
+        elif len(center) == 3:
+            self.x0 = np.array(center)
+        else:
+            raise ValueError('Bad value of center')
+
+        positions = atoms.get_positions()
+        for pos in positions:
+            pos -= self.x0
+
+        atoms.set_positions(positions)
+        self.atoms = atoms
+
+        if max_radius is not None:
+            self.max_radius = max_radius
 
 class Configuration(object):
     """
@@ -75,14 +96,76 @@ class Configuration(object):
     """
 
     TOL = 1e-5
-    def __init__(self,dim=None,adsorbates=None,adsorbates_positions = None, atoms=None):
-        pass
+    def __init__(self,
+                 unit_cell=None,
+                 size=None,
+                 adsorbates_coords=None,
+                 atoms=None):
+        """
+        Initialize a Configuration instance
+
+        Args
+        ----
+
+        unit_cell : Instance of the UnitCell class that defines the surface
+
+        size (array-like[int]) : Dimensions of the unit cell defining the configuration
+
+        adsorbates ( list [ (Adsorbate, (int, int, str/int)) ] ) : Defines the coverage of
+            the Configuration
+        """
+        if atoms is None:
+            if not all([unit_cell,size,adsorbates_coords]):
+                raise RuntimeError('unit_cell, size, and adsorbates_coords are needed'
+                                   'to define a Configuration')
+            self.unit_cell = unit_cell
+            if not len(size) == DIM:
+                raise ValueError('Wrong dimension for size!!')
+            self.size = size
+            self.adsorbates_coords = adsorbates_coords
+        else:
+            raise NotImplementedError('Detecting configurations from atoms'
+                                      ' not implemented yet!')
 
     def return_atoms(self):
-        pass
+        """Builds the atoms object that corresponds to the configuration
+        """
+        atoms = self.unit_cell.atoms * [self.size[0],self.size[1],1]
+
+        for adsorbate, coord in self.adsorbates_coords:
+            if isinstance(coord[2],str):
+                isite = self.unit_cell.sites_names.index(coord[2])
+            else:
+                isite = coord[2]
+
+
+            x0cell = (coord[0]*self.unit_cell.cell[0]
+                      + coord[1]*self.unit_cell.cell[1])
+                      #+ self.unit_cell.h0*zvect)
+
+            ads_positions = adsorbate.atoms.get_positions()
+            for ads_pos in ads_positions:
+                # print(type(x0cell))
+                # # print(x0cell.shape)
+                # print(x0cell)
+                # print(type(self.unit_cell.sites_pos[isite]))
+                # # print(self.unit_cell.sites_pos[isite].shape)
+                # print(self.unit_cell.sites_pos[isite])
+                # print(type(ads_pos))
+                # # print(ads_pos.shape)
+                # print(ads_pos)
+
+                ads_pos += x0cell + self.unit_cell.sites_pos[isite]
+
+                print(ads_pos)
+            print(ads_positions)
+            toadd = adsorbate.atoms.copy()
+            toadd.set_positions(ads_positions)
+            atoms += toadd
+        return atoms
 
     def __eq__(self,other):
-        pass
+        return False
 
     # def identify_clusters(self):
 
@@ -108,4 +191,4 @@ class Lattice(object):
             self.volume *= size[i]
 
     def lattice2number(coord):
-        ###
+        pass
