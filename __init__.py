@@ -169,6 +169,77 @@ class LGH:
         else:
             print('Could not converge!!')
 
+    def print_error_analysis(self, to_stdout = True):
+        """Analysis of the error of the LGH compared to DFT and to neglected LIs
+        """
+        message = ''
+        message += 'Error report for LGH\n'
+        message += '|{:5}|{:20}|{:15}|{:8}|{:8}|{:8}|{:8}|\n'.format(
+            'Nr','Name','E_DFT','Err_LGH','per_ads','Err_noLI','per_ads')
+
+        merr_LGH = 0.0
+        sumerrLGH = 0.0
+        imerr_LGH = 0
+
+        merr_noLI = 0.0
+        sumerrnoLI = 0.0
+        imerr_noLI = 0
+
+        mepa_LGH = 0.0
+        sumepaLGH = 0.0
+        imepa_LGH = 0
+
+        mepa_noLI = 0.0
+        sumepanoLI = 0.0
+        imepa_noLI = 0
+
+        tot_nads = 0
+
+        for ic, config in enumerate(self.config_list):
+            Err_LGH = self.energy(ic)-config.Eref
+            Err_noLI = (self.energy(ic,np.zeros(len(self.free)))-config.Eref)
+            nads = config.nvector.sum()
+            message +='|{:5}|{:20}|{:15.03f}|{:8.03f}|{:8.03f}|{:8.03f}|{:8.03f}|\n'.format(
+                ic,
+                config.name,
+                config.Eref,
+                Err_LGH,
+                Err_LGH / nads,
+                Err_noLI,
+                Err_noLI / nads,
+                )
+            if abs(Err_LGH) > abs(merr_LGH):
+                merr_LGH = Err_LGH
+                imerr_LGH = ic
+            if abs(Err_LGH/nads) > abs(mepa_LGH):
+                mepa_LGH = Err_LGH / nads
+                imepa_LGH = ic
+            if abs(Err_noLI) > abs(merr_noLI):
+                merr_noLI = Err_noLI
+                imerr_noLI = ic
+            if abs(Err_noLI/nads) > abs(mepa_noLI):
+                mepa_noLI = Err_noLI / nads
+                imepa_noLI = ic
+
+            sumerrLGH += abs(Err_LGH)
+            sumerrnoLI += abs(Err_noLI)
+            tot_nads += nads
+
+
+
+        message += 'Maximum LGH error             : {:03f} (conf {})\n'.format(merr_LGH,imerr_LGH)
+        message += 'Maximum LGH err. per adsorbate: {:03f} (conf {})\n'.format(mepa_LGH,imepa_LGH)
+        message += 'Avg. LGH error             : {:03f}\n'.format(sumerrLGH / (ic+1))
+        message += 'Avg. LGH err. per adsorbate: {:03f}\n'.format(sumerrLGH / tot_nads)
+        message += 'Maximum noLI error            : {:03f} (conf {})\n'.format(merr_noLI,imerr_noLI)
+        message += 'Maximum noLI er. per adsorbate: {:03f} (conf {})\n'.format(mepa_noLI,imepa_noLI)
+        message += 'Avg. noLI error             : {:03f}\n'.format(sumerrnoLI / (ic+1))
+        message += 'Avg. noLI err. per adsorbate: {:03f}\n'.format(sumerrnoLI / tot_nads)
+
+        if to_stdout:
+            print(message)
+        return message
+
 
 def loadfile(filename):
     """
