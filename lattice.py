@@ -159,21 +159,18 @@ class Configuration(object):
                                              self.adsorbates_coords])))
         self.nspecs = len(self.species_list)
 
-        matrix = np.zeros([size[0],size[1],self.unit_cell.nsites],int)
+        lattice = np.zeros([size[0],size[1],self.unit_cell.nsites],int)
         for ads_coord in self.adsorbates_coords:
             if isinstance(ads_coord[1][2],str):
                 isite = self.unit_cell.sites_list.index(ads_coord[1][2])
             else:
                 isite = ads_coord[1][2]
-            if matrix[ads_coord[1][0],ads_coord[1][1],isite]:
+            if lattice[ads_coord[1][0],ads_coord[1][1],isite]:
                 raise ValueError('Site {},{},{} assigned twice!'.format(
                     ads_coord[1][0],ads_coord[1][1],isite))
             else:
-                matrix[ads_coord[1][0],ads_coord[1][1],isite] =
+                lattice[ads_coord[1][0],ads_coord[1][1],isite] =
                 self.species_list.index(ads_coord[0])
-
-
-
 
     def return_atoms(self):
         """Builds the atoms object that corresponds to the configuration
@@ -227,15 +224,14 @@ class Configuration(object):
 
         NREP = 1 # TODO make update with cluster size
 
+        # Go through 2*NREP+1 copies of the lattice
         for ix in xrange(-NREP,NREP+1):
             for iy in xrange(-NREP,NREP+1):
+                # Check each cluster around each point
                 for instance in cluster.instance_list:
+                    # Check if cluster touches central cell
 
-
-
-
-
-
+                    # Check if cluster is on cell
 
     def __eq__(self,other):
         ## TODO build this
