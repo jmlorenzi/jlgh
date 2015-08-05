@@ -229,6 +229,24 @@ class Config(object):
             surf *= self.size[i]
         return self.get_multiplicity() / float(surf)
 
+        self.species_list = sorted(list(set([ads_coord[0].name
+                                             for ads_coord in
+                                             self.adsorbates_coords])))
+        self.nspecs = len(self.species_list)
+
+        lattice = np.zeros([size[0],size[1],self.unit_cell.nsites],int)
+        for ads_coord in self.adsorbates_coords:
+            if isinstance(ads_coord[1][2],str):
+                isite = self.unit_cell.sites_list.index(ads_coord[1][2])
+            else:
+                isite = ads_coord[1][2]
+            if lattice[ads_coord[1][0],ads_coord[1][1],isite]:
+                raise ValueError('Site {},{},{} assigned twice!'.format(
+                    ads_coord[1][0],ads_coord[1][1],isite))
+            else:
+                lattice[ads_coord[1][0],ads_coord[1][1],isite] =
+                self.species_list.index(ads_coord[0])
+
     def return_atoms(self):
         """Builds the atoms object that corresponds to the configuration
         """
@@ -308,6 +326,7 @@ class Config(object):
 
 
     def __eq__(self,other):
+        ## TODO build this
         return False
 
 
