@@ -143,8 +143,8 @@ class Site(object):
 
     def __repr__(self):
         return '[SITE] {0:12s} {2:s} {3:s}'.format(self.name,
-                                                            self.pos,
-                                                            self.tags)
+                                                   self.pos,
+                                                   self.tags)
 
 class BareCoord(object):
     """
@@ -165,6 +165,23 @@ class BareCoord(object):
                 raise ValueError('Wrong size for offset')
         else:
             raise TypeError('Offset type not supported')
+
+
+def parse_spec_coord(sc_string):
+    spec, terms = sc_string.split('@')
+
+    term = terms.split('.')
+    if len(term) == 2:
+        print(term[1])
+        print(type(term[1]))
+        coord = BareCoord(term[0].strip(),eval(term[1]),
+                      )
+    elif len(term) == 1:
+        coord = BareCoord(term[0].strip(),(0, 0, 0),)
+    else:
+        raise ValueError("Cannot parse coord description")
+
+    return spec, coord
 
 
 class Config(object):
@@ -192,13 +209,20 @@ class Config(object):
 
         self.size = size
         # Check consistency of species_coords
-        for spec, coord in species_coords:
+
+        self.species_coords = []
+
+        for i, spec_coord in enumerate(species_coords):
+            if isinstance(spec_coord, str):
+                spec, coord = parse_spec_coord(spec_coord)
+            else:
+                spec, coord = spec_coord
             for i in xrange(DIM):
                 if coord.offset[i] >= DIM:
                     raise NotImplementedError(
                 'Coordinate {0}{1} falls outside configuration'.format(
                     coord.name,coord.offset))
-        self.species_coords = species_coords
+            self.species_coords.append((spec,coord))
 
     def set_lgh(self,lgh):
         """
@@ -317,8 +341,13 @@ class Cluster(object):
     Defines and individual cluster, without any consideration for symmetry
     """
     def __init__(self,species_coords):
-        self.species_coords = species_coords
-
+        self.species_coords = []
+        for spec_coord in species_coords:
+            if isinstance(spec_coord,str):
+                spec, coord = parse_spec_coord(spec_coord)
+            else:
+                spec, coord = spec_coord
+            self.species_coords.append((spec,coord))
 
 class ClusterGroup(object):
     """
