@@ -13,45 +13,75 @@ DELTA_H_SMALL = 1.0 # Default height over the surface to place adsorbates
 
 zvect = np.array([0.,0.,1.])
 
+class LGH(object):
+    """
+    Contains the definition of the LGH, including the set of all posible
+    adsorbates, the set of all cluster and all the configurations to be
+    fitted to the cluster expansion model
+    """
 
-class UnitCell(object):
+    def __init__(self,**kwargs):
+        if 'sucell' in kwargs.keys():
+            self.sucell = kwargs['sucell']
+
+        self.adsorbate_list = []
+        self.config_list = []
+        self.clustergoup_list = []
+
+    def add_sucell(self,sucell):
+        """Define the unit cell for the surface"""
+        if not hasattr(self,'sucell'):
+            self.sucell = sucell
+
+    def add_adsorbate(self,adsorbate):
+        """Add an adsorbate"""
+        self.adsorbate_list.append(adsorbate)
+
+    def add_adsorbates(self,ads_list):
+        """Add a list of adsorbates"""
+        self.adsorbate_list.extend(ads_list)
+
+    def add_config(self,config):
+        """Add a configuration"""
+        config.set_lgh(self)
+        self.config_list.append(config)
+
+    def add_configs(self,config_list):
+        """Add a list of configurations"""
+        for config in config_list:
+            config.set_lgh(self)
+            self.config_list.append(config)
+
+    def add_clustergroup(self,clustergroup):
+        """Add a Cluster Group"""
+        self.clustergoup_list.append(clustergroup)
+
+    def add_clustergroups(self,clustergroup_list):
+        """Add a Cluster Group"""
+        self.clustergoup_list.extend(clustergroup_list)
+
+    def get_atoms(self,iconf):
+        return self.config_list[iconf].get_atoms()
+
+    def identify_clusters(self,iconf):
+        return self.config_list[iconf].identify_clusters()
+
+    def get_species(self):
+        return sorted([ads.name for ads in self.adsorbate_list])
+
+
+class SurfUnitCell(object):
     """ Class that contains the basic unit cell for the skeleton structure of the LGH.
     In our standard use case, this means the surface
     """
-    def __init__(self, atoms, sites_pos=None, sites_names=None,h0 = None):
+    def __init__(self, atoms, sites_list=None):
 
         self.atoms = atoms
-        self.cell = atoms.cell[:DIM]
 
+        self.cell = atoms.cell
+        self.nsites = len(sites_list)
 
-        # Define the default height for the slab
-        if h0:
-            self.h0 = h0
-        else:
-            self.h0 = max([at.position[2] for at in self.atoms]) + DELTA_H_SMALL
-
-        self.sites_pos = []
-        if sites_pos:
-            for isite, site_pos in enumerate(sites_pos):
-                if len(site_pos) == 2:
-                    self.sites_pos.append(site_pos[0]*self.cell[0] +
-                                          site_pos[1]*self.cell[1] +
-                                          self.h0*zvect)
-                elif len(site_pos) == 3:
-                    self.sites_pos.append(np.array(site_pos))
-                else:
-                    raise ValueError('Wrong positon for site nr {:2d}'.format(isite))
-
-        self.nsites = len(sites_pos)
-        if sites_names:
-            if len(sites_names) != self.nsites:
-                raise ValueError('Number of names does not match number of sites')
-            for site_name in sites_names:
-                if not isinstance(site_name, str):
-                    raise TypeError('Sites names must be strings')
-            self.sites_names = sites_names
-        else:
-            self.sites_names = ['site{:02d}'.format(j) for j in xrange(len(self.nsites))]
+        self.sites_list = sorted(sites_list,key=lambda site: site.name)
 
 class Adsorbate(object):
     """
@@ -73,6 +103,7 @@ class Adsorbate(object):
             considered bound. Optional, defaults to None, which should be interpreted as inf.
         """
         self.name = name
+
         if isinstance(center, int):
             self.x0 = atoms.get_positions()[center]
         elif len(center) == 3:
@@ -90,105 +121,210 @@ class Adsorbate(object):
         if max_radius is not None:
             self.max_radius = max_radius
 
-class Configuration(object):
+class Site(object):
+    """Class that defines a site in the SurfaceUnitCell.
+    Heavily inspired in the kmos.types.Site class.
+    Thanks to Max Hoffmann for coding that
+    """
+
+    def __init__(self, **kwargs):
+        self.name = kwargs.get('name', '')
+        self.tags = kwargs.get('tags', '')
+        if 'pos' in kwargs:
+            if type(kwargs['pos']) is str:
+                self.pos = np.array([float(i) for i in kwargs['pos'].split()])
+            elif type(kwargs['pos']) in [np.ndarray, tuple, list]:
+                self.pos = np.array(kwargs['pos'])
+            else:
+                raise Exception('Input %s not understood!' % kwargs['pos'])
+        else:
+            self.pos = np.array([0., 0., 0.])
+
+
+    def __repr__(self):
+        return '[SITE] {0:12s} {2:s} {3:s}'.format(self.name,
+                                                            self.pos,
+                                                            self.tags)
+
+class BareCoord(object):
+    """
+    A bare Coord definition to be included in Config class instances
+    """
+    def __init__(self,sitename,offset):
+        self.name = sitename
+        if type(offset) in [ list, tuple, np.ndarray]:
+            if len(offset) == 1:
+                self.offset = np.array([offset[0], 0, 0], int)
+            elif len(offset) == 2:
+                self.offset = np.array([offset[0], offset[1], 0], int)
+            elif len(offset) == 3:
+                self.offset = np.array([offset[0],
+                                        offset[1],
+                                        offset[2]], int)
+            else:
+                raise ValueError('Wrong size for offset')
+        else:
+            raise TypeError('Offset type not supported')
+
+
+class Config(object):
     """
     Defines a configuration instance
     """
 
     TOL = 1e-5
     def __init__(self,
-                 unit_cell=None,
-                 size=None,
-                 adsorbates_coords=None,
-                 atoms=None):
+                 size,
+                 species_coords,
+                 ):
         """
         Initialize a Configuration instance
 
         Args
         ----
 
-        unit_cell : Instance of the UnitCell class that defines the surface
-
         size (array-like[int]) : Dimensions of the unit cell defining the configuration
 
-        adsorbates ( list [ (Adsorbate, (int, int, str/int)) ] ) : Defines the coverage of
-            the Configuration
+        adsorbates ( list [ (name, bare_coord) ] ) : Defines how the surface is filled
         """
-        if atoms is None:
-            if not all([unit_cell,size,adsorbates_coords]):
-                raise RuntimeError('unit_cell, size, and adsorbates_coords are needed'
-                                   'to define a Configuration')
-            self.unit_cell = unit_cell
-            if not len(size) == DIM:
-                raise ValueError('Wrong dimension for size!!')
-            self.size = size
-            self.adsorbates_coords = adsorbates_coords
-        else:
-            raise NotImplementedError('Detecting configurations from atoms'
-                                      ' not implemented yet!')
+        if not len(size) == DIM:
+            raise ValueError('Wrong dimension for size!!')
+
+        self.size = size
+        # Check consistency of species_coords
+        for spec, coord in species_coords:
+            for i in xrange(DIM):
+                if coord.offset[i] >= DIM:
+                    raise NotImplementedError(
+                'Coordinate {0}{1} falls outside configuration'.format(
+                    coord.name,coord.offset))
+        self.species_coords = species_coords
+
+    def set_lgh(self,lgh):
+        """
+        Link the LGH with the current configuration.
+
+        Srveral of the other methods only work with this set
+        """
+        self.lgh = lgh
+
+    def get_species(self):
+        return sorted(list(set([spec_coord[0]
+                    for spec_coord in self.species_coords])))
+
+    def get_sites(self):
+        return sorted(list(set([spec_coord[1].name
+                    for spec_coord in self.species_coords])))
+
+    def get_multiplicity(self):
+        multip = []
+        for spec in self.get_species():
+            multip.append(len([spec_coord for spec_coord in
+                               self.species_coords if spec_coord[0] == spec]))
+        return np.array(multip)
+
+    def get_coverages(self):
+        surf = 1
+        for i in xrange(DIM):
+            surf *= self.size[i]
+        return self.get_multiplicity() / float(surf)
 
     def return_atoms(self):
         """Builds the atoms object that corresponds to the configuration
         """
-        atoms = self.unit_cell.atoms * [self.size[0],self.size[1],1]
+        atoms = self.lgh.sucell.atoms * [self.size[0],self.size[1],1]
 
-        for adsorbate, coord in self.adsorbates_coords:
-            if isinstance(coord[2],str):
-                isite = self.unit_cell.sites_names.index(coord[2])
-            else:
-                isite = coord[2]
+        for species, coord in self.species_coords:
+            adsorbate = [ads for ads in self.lgh.adsorbate_list
+                          if ads.name == species][0]
+            site = [ssite for ssite in self.lgh.sucell.sites_list
+                    if ssite.name == coord.name][0]
 
-
-            x0cell = (coord[0]*self.unit_cell.cell[0]
-                      + coord[1]*self.unit_cell.cell[1])
-                      #+ self.unit_cell.h0*zvect)
+            rcoord = ((coord.offset[0]+site.pos[0])*self.lgh.sucell.cell[0]
+                     + (coord.offset[1]+site.pos[1])*self.lgh.sucell.cell[1]
+                     +  site.pos[2]*self.lgh.sucell.cell[2])
 
             ads_positions = adsorbate.atoms.get_positions()
             for ads_pos in ads_positions:
-                # print(type(x0cell))
-                # # print(x0cell.shape)
-                # print(x0cell)
-                # print(type(self.unit_cell.sites_pos[isite]))
-                # # print(self.unit_cell.sites_pos[isite].shape)
-                # print(self.unit_cell.sites_pos[isite])
-                # print(type(ads_pos))
-                # # print(ads_pos.shape)
-                # print(ads_pos)
+                ads_pos += rcoord
 
-                ads_pos += x0cell + self.unit_cell.sites_pos[isite]
-
-                print(ads_pos)
-            print(ads_positions)
             toadd = adsorbate.atoms.copy()
             toadd.set_positions(ads_positions)
             atoms += toadd
         return atoms
 
+    def calculate_matrix(self):
+
+        if not self.lgh:
+            species_list = self.get_species()
+            sites_list = self.get_sites()
+        else:
+            species_list = self.lgh.get_species()
+            sites_list = [s.name for s in self.lgh.sucell.sites_list]
+
+        matrix = np.zeros([self.size[0],self.size[1],len(sites_list)],int)
+
+        # Fill up the matrix
+        for spec, coord in self.species_coords:
+            matrix[coord.offset[0],
+                   coord.offset[1],
+                   sites_list.index(coord.name)] = (species_list.index(spec) + 1)
+
+        self.matrix = matrix
+
+    def identify_clusters(self):
+        """ Count the number of repetitions for each cluster in the LGH
+        """
+        if not hasattr(self,'matrix'):
+            self.calculate_matrix()
+        species_list = self.lgh.get_species()
+        sites_list = [s.name for s in self.lgh.sucell.sites_list]
+
+        count = [0,]*len(self.lgh.clustergoup_list)
+        # Go through all the surface
+        for ix in xrange(self.size[0]):
+            for iy in xrange(self.size[1]):
+                # and all cluster
+                for icg, cluster_group in enumerate(self.lgh.clustergoup_list):
+                    for cluster in cluster_group.clusters:
+                        # and finally all coordinates
+                        for species, coord in cluster.species_coords:
+                            # relative coordinates wrapped back to
+                            # the config unit cell
+                            xrel = (ix + coord.offset[0]) % self.size[0]
+                            yrel = (iy + coord.offset[1]) % self.size[1]
+                            if not ( self.matrix[xrel,
+                                               yrel,
+                                               sites_list.index(coord.name)]
+                                == (species_list.index(species) + 1 )):
+                                break
+                        else:
+                            print('Found match for cluster {}'.format(cluster_group.name))
+                            print('In position {},{}'.format(ix,iy))
+                            count[icg] += 1
+        for icg, cluster_group in enumerate(self.lgh.clustergoup_list):
+            print('Count for cluster {0} = {1:d}'.format(cluster_group.name,count[icg]))
+
+
+
     def __eq__(self,other):
         return False
 
-    # def identify_clusters(self):
+
+class Cluster(object):
+    """
+    Defines and individual cluster, without any consideration for symmetry
+    """
+    def __init__(self,species_coords):
+        self.species_coords = species_coords
 
 
-
-class Lattice(object):
-    def __init__(self,unit_cell,size):
-        self.dim = unit_cell.dim
-        if isinstance( size, list):
-            if len(cell) != dim:
-                raise ValueError('Lattice size and dim incompatible')
-            for x in size:
-                if not isinstance(x, int):
-                    raise TypeError('Lattice size must be integer')
-            self.size = size
-        elif isinstance(size, ( int) ):
-            self.size = ( size,) * 3
-        else:
-            raise TypeError('size of wront type')
-
-        self.volume = unit_cell.nsites
-        for i in range(self.dim):
-            self.volume *= size[i]
-
-    def lattice2number(coord):
-        pass
+class ClusterGroup(object):
+    """
+    Class that holds a cluster group. That is all clusters that are equivalent through
+    symmetry transformations
+    """
+    def __init__(self, name, energy, cluster_list):
+        self.name = name
+        self.energy = energy
+        self.clusters = cluster_list
