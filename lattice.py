@@ -126,7 +126,6 @@ class Site(object):
     Heavily inspired in the kmos.types.Site class.
     Thanks to Max Hoffmann for coding that
     """
-
     def __init__(self, **kwargs):
         self.name = kwargs.get('name', '')
         self.tags = kwargs.get('tags', '')
@@ -166,14 +165,19 @@ class BareCoord(object):
         else:
             raise TypeError('Offset type not supported')
 
+    def __eq__(self,other):
+        return all([self.name == other.name,
+                   not any(self.offset - other.offset)])
+
+    def __ne__(self,other):
+        return any([self.name != other.name,
+                    any(self.offset - other.offset)])
 
 def parse_spec_coord(sc_string):
     spec, terms = sc_string.split('@')
 
     term = terms.split('.')
     if len(term) == 2:
-        print(term[1])
-        print(type(term[1]))
         coord = BareCoord(term[0].strip(),eval(term[1]),
                       )
     elif len(term) == 1:
@@ -182,7 +186,6 @@ def parse_spec_coord(sc_string):
         raise ValueError("Cannot parse coord description")
 
     return spec, coord
-
 
 class Config(object):
     """
@@ -312,29 +315,44 @@ class Config(object):
                 for icg, cluster_group in enumerate(self.lgh.clustergoup_list):
                     for cluster in cluster_group.clusters:
                         # and finally all coordinates
-                        for species, coord in cluster.species_coords:
-                            # relative coordinates wrapped back to
-                            # the config unit cell
-                            xrel = (ix + coord.offset[0]) % self.size[0]
-                            yrel = (iy + coord.offset[1]) % self.size[1]
-                            if not ( self.matrix[xrel,
-                                               yrel,
-                                               sites_list.index(coord.name)]
-                                == (species_list.index(species) + 1 )):
-                                break
-                        else:
-                            print('Found match for cluster {}'.format(cluster_group.name))
-                            print('In position {},{}'.format(ix,iy))
-                            count[icg] += 1
+                        for cent_spec, cent_coord in cluster.species_coords:
+                            # twice, since we need to account for shifts
+                            if not ( self.matrix[ix,iy,
+                                    sites_list.index(cent_coord.name)] ==
+                                    (species_list.index(cent_spec)+1)):
+                                continue
+                            print('Conf Coord {},{}'.format(ix,iy))
+                            print('Cent Coord name: {}'.format(cent_coord.name))
+                            print('Cent Coord offset: {},{}'.format(cent_coord.offset[0],
+                                                                    cent_coord.offset[1]))
+                            print(len([ x for x in
+                                cluster.species_coords if x[1] != cent_coord]))
+
+                            for spec, coord in [ x for x in
+                                cluster.species_coords if x[1] != cent_coord]:
+                                # get coordinates relative to the center,
+                                # folded into the central copy
+                                xrel = (ix + coord.offset[0] - cent_coord.offset[0])\
+                                  % self.size[0]
+                                yrel = (iy + coord.offset[1] - cent_coord.offset[1])\
+                                  % self.size[1]
+                                if not ( self.matrix[xrel,
+                                                   yrel,
+                                                   sites_list.index(coord.name)]
+                                    == (species_list.index(spec) + 1 )):
+                                    print('Skipped')
+                                    break
+                            else:
+                                # print('Found match for cluster {}'.format(cluster_group.name))
+                                # print('In position {},{}'.format(ix,iy))
+                                count[icg] += 1
+                                print('Counted one for {}'.format(cluster_group.name))
         for icg, cluster_group in enumerate(self.lgh.clustergoup_list):
             print('Count for cluster {0} = {1:d}'.format(cluster_group.name,count[icg]))
-
-
 
     def __eq__(self,other):
         ## TODO build this
         return False
-
 
 class Cluster(object):
     """
@@ -357,4 +375,9 @@ class ClusterGroup(object):
     def __init__(self, name, energy, cluster_list):
         self.name = name
         self.energy = energy
-        self.clusters = cluster_list
+        self.clusters = []
+        for cluster_def in cluster_list:
+            if isinstance(cluster_def,Cluster):
+                self.clusters.append(cluster_def)
+            else:
+                self.clusters.append(Cluster(cluster_def))
