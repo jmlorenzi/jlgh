@@ -30,7 +30,7 @@ species_coords = [ 'O@hollow.(0,0,0)', 'CO@br2.(1,1,0)']
 species_coords = [ 'O@hollow.(0,0,0)', 'O@hollow.(1,0,0)','CO@br2.(1,1,0)']
 conf = jl.Config(size = [2,2],species_coords = species_coords)
 
-V_O_CO_defs = [ ('O@hollow.(0,0,0)','CO@br2.(1,1,0)'),
+V_O_CO_defs = [  ('O@hollow.(0,0,0)','CO@br2.(1,1,0)'),
                  ('O@hollow.(0,0,0)','CO@br2.(0,1,0)'),
                  ('O@hollow.(0,0,0)','CO@br1.(-1,1,0)'),
                  ('O@hollow.(0,0,0)','CO@br1.(-1,0,0)'),

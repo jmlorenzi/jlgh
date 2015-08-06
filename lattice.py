@@ -6,12 +6,26 @@ the objects used to define the LGH
 import ase
 import ase.lattice.surface
 import numpy as np
-
+from jlgh.tools import *
+from struformat.molcrys import cluster
 
 DIM = 2  # We use this as a parameter, but probably will always be fixed
 DELTA_H_SMALL = 1.0 # Default height over the surface to place adsorbates
 
+TOL_ANGLE = 1e-9
+TOL_DIST = 1e-9
+
 zvect = np.array([0.,0.,1.])
+
+def get_dot_cross_angle(v1,v2):
+    """
+    Wraps the operations to get angles
+    between vectors to reduce code repetition
+    """
+    cross = np.cross(v1,v2)
+    dot = np.dot(v1,v2)
+    angle = np.arctan2(np.linalg.norm(cross),dot)
+    return dot, cross, angle
 
 class LGH(object):
     """
@@ -23,6 +37,7 @@ class LGH(object):
     def __init__(self,**kwargs):
         if 'sucell' in kwargs.keys():
             self.sucell = kwargs['sucell']
+            self.cell = self.sucell.cell
 
         self.adsorbate_list = []
         self.config_list = []
@@ -32,6 +47,7 @@ class LGH(object):
         """Define the unit cell for the surface"""
         if not hasattr(self,'sucell'):
             self.sucell = sucell
+            self.cell = sucell.cell
 
     def add_adsorbate(self,adsorbate):
         """Add an adsorbate"""
@@ -79,37 +95,108 @@ class LGH(object):
         """
         # We do not want to mess with the original atoms
         natoms = atoms.copy()
-        # We can first use the unit cell vectors
-        # Rotate atoms so its x-axis matches that from sucell
-        angle = np.angle(natoms.cell[0],self.ucell[0])
-        vnormal = np.cross(natoms.cell[0],self.ucell[0])
-        natoms.rotate(vnormal, -angle)
+        # We can first use the unit cell vectors angles
+        for pairs in [(0,1,),(1,2,),(2,0)]:
+            _, _, a_cell = get_dot_cross_angle(self.cell[pairs[0]],
+                                               self.cell[pairs[1]])
+            _, _, a_atoms = get_dot_cross_angle(natoms.cell[pairs[0]],
+                                                natoms.cell[pairs[1]])
+            if abs(a_cell - a_atoms) > TOL_ANGLE:
+                print('Angles between axes {} and {} for atoms cell'
+                      ' differ from the one in the elementary cell')
+                return False
 
-        # And also rotate to match y axis
-        something-something
-        if angle_yy > tol_angle:
-            print('No match found, unit of atoms has differen angles')
-            return False
+        # Rotate atoms so its x-axis matches that from sucell
+        xdot, xnormal, angle = get_dot_cross_angle(natoms.cell[0],self.cell[0])
+        if angle > TOL_ANGLE:
+            print('Rotating {} rad to match x axes'.format(angle))
+            natoms.rotate(xnormal / np.linalg.norm(xnormal), angle, rotate_cell = True)
+
+        # Project y axes into the x axis
+        xversor = self.cell[0] / np.linalg.norm(self.cell[0])
+        y_cell_aux = np.dot(self.cell[1],xversor)*xversor
+        y_atoms_aux = np.dot(natoms.cell[1],xversor)*xversor
+        # And use this to get the perpendicular part
+        y_cell_aux = self.cell[1] - y_cell_aux
+        y_atoms_aux = natoms.cell[1] - y_atoms_aux
+        # And the angle between them
+        _, xparall, angle = get_dot_cross_angle(y_atoms_aux, y_cell_aux,)
+        # if we did things right xparall should be true to its name
+        _, _, zero_angle = get_dot_cross_angle(xparall,xversor)
+        if min(abs(zero_angle),abs(zero_angle-np.pi)) > TOL_ANGLE:
+            print('zero_angle = {}'.format(zero_angle))
+            raise RuntimeError('Should never come here! zero_angle not zero!')
+
+        # Perform the final rotation!
+        if abs(angle) > TOL_ANGLE:
+            print('Rotating {} rad around x axis'.format(angle))
+            natoms.rotate(xparall / np.linalg.norm(xparall), angle, rotate_cell = True)
+
+        # And explicity again check all angles
+        for i in xrange(3):
+            _, _, angle = get_dot_cross_angle(natoms.cell[i],self.cell[i])
+            if abs(angle) > TOL_ANGLE:
+                raise RuntimeError(
+            'Something went wrong! Angle of axes {} do not match'.format(i))
 
         # Check lengths
         fnx = np.linalg.norm(natoms.cell[0]) \
-                 / np.linalg.norm(self.ucell.cell[0])
+                 / np.linalg.norm(self.cell[0])
         nx = round(fnx)
-        if abs(fnx-nx) > tol_dist:
+        if abs(fnx-nx) > TOL_DIST:
             print('Size of x vector of atoms cell is too off')
             return False
         nx = int(nx)
 
         fny = np.linalg.norm(natoms.cell[1]) \
-                 / np.linalg.norm(self.ucell.cell[1])
+                 / np.linalg.norm(self.cell[1])
         ny = round(fny)
-        if abs(fny-ny) > tol_dist:
+        if abs(fny-ny) > TOL_DIST:
             print('Size of y vector of atoms cell is too off')
             return False
         ny = int(ny)
 
+        size = (nx,ny)
 
+        print('Found that atoms match a ({0}x{1}) unit cell'.format(*size))
 
+        # spliting geometry using C. Schobers tool
+        fragments = cluster(natoms)
+
+        conf_def = []
+
+        for frag in fragments:
+            for ads in self.adsorbate_list:
+                if (frag.get_chemical_symbols() ==
+                    ads.atoms.get_chemical_symbols()):
+                    break
+            else:
+                continue
+            cmpos = frag.get_center_of_mass()
+            # project center of mass to xy plane
+            cmpos = project_to_plane(cmpos,natoms.cell[0],natoms.cell[1])
+            # go through all sites to see which is closest
+            sitesdists = []
+            for ix in xrange(size[0]):
+                for iy in xrange(size[1]):
+                    for site in self.sucell.sites_list:
+                        pos = ix*self.cell[0] + \
+                              iy*self.cell[1] + \
+                              site.pos
+                        pos = project_to_plane(pos,
+                                               natoms.cell[0],
+                                               natoms.cell[1])
+                        # print(pos)
+                        # print(cmpos)
+                        dist = np.linalg.norm(pos-cmpos)
+                        sitesdists.append(((ix,iy,site.name),dist))
+            site = min(sitesdists,key = lambda x: x[1])
+            # print(site[0][2])
+            descr = '{}@{}.({},{},0)'.format(ads.name,site[0][2],
+                                              site[0][0],site[0][1])
+            print('Found adsorbate {}'.format(descr))
+
+        return natoms
 
 class SurfUnitCell(object):
     """ Class that contains the basic unit cell for the skeleton structure of the LGH.
@@ -362,12 +449,12 @@ class Config(object):
                                     sites_list.index(cent_coord.name)] ==
                                     (species_list.index(cent_spec)+1)):
                                 continue
-                            print('Conf Coord {},{}'.format(ix,iy))
-                            print('Cent Coord name: {}'.format(cent_coord.name))
-                            print('Cent Coord offset: {},{}'.format(cent_coord.offset[0],
-                                                                    cent_coord.offset[1]))
-                            print(len([ x for x in
-                                cluster.species_coords if x[1] != cent_coord]))
+                            # print('Conf Coord {},{}'.format(ix,iy))
+                            # print('Cent Coord name: {}'.format(cent_coord.name))
+                            # print('Cent Coord offset: {},{}'.format(cent_coord.offset[0],
+                            #                                         cent_coord.offset[1]))
+                            # print(len([ x for x in
+                            #     cluster.species_coords if x[1] != cent_coord]))
 
                             for spec, coord in [ x for x in
                                 cluster.species_coords if x[1] != cent_coord]:
@@ -381,13 +468,13 @@ class Config(object):
                                                    yrel,
                                                    sites_list.index(coord.name)]
                                     == (species_list.index(spec) + 1 )):
-                                    print('Skipped')
+                                    # print('Skipped')
                                     break
                             else:
                                 # print('Found match for cluster {}'.format(cluster_group.name))
                                 # print('In position {},{}'.format(ix,iy))
                                 count[icg] += 1
-                                print('Counted one for {}'.format(cluster_group.name))
+                                # print('Counted one for {}'.format(cluster_group.name))
         for icg, cluster_group in enumerate(self.lgh.clustergoup_list):
             print('Count for cluster {0} = {1:d}'.format(cluster_group.name,count[icg]))
 
