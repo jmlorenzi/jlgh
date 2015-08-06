@@ -69,6 +69,47 @@ class LGH(object):
     def get_species(self):
         return sorted([ads.name for ads in self.adsorbate_list])
 
+    def read_atoms(self,atoms):
+        """ Takes an atoms object and identifies the
+        corresponding configuration associated to it
+        Returns False in failure
+
+        Note: Only works for units cell with z axis
+        perpendicular to the xy plane
+        """
+        # We do not want to mess with the original atoms
+        natoms = atoms.copy()
+        # We can first use the unit cell vectors
+        # Rotate atoms so its x-axis matches that from sucell
+        angle = np.angle(natoms.cell[0],self.ucell[0])
+        vnormal = np.cross(natoms.cell[0],self.ucell[0])
+        natoms.rotate(vnormal, -angle)
+
+        # And also rotate to match y axis
+        something-something
+        if angle_yy > tol_angle:
+            print('No match found, unit of atoms has differen angles')
+            return False
+
+        # Check lengths
+        fnx = np.linalg.norm(natoms.cell[0]) \
+                 / np.linalg.norm(self.ucell.cell[0])
+        nx = round(fnx)
+        if abs(fnx-nx) > tol_dist:
+            print('Size of x vector of atoms cell is too off')
+            return False
+        nx = int(nx)
+
+        fny = np.linalg.norm(natoms.cell[1]) \
+                 / np.linalg.norm(self.ucell.cell[1])
+        ny = round(fny)
+        if abs(fny-ny) > tol_dist:
+            print('Size of y vector of atoms cell is too off')
+            return False
+        ny = int(ny)
+
+
+
 
 class SurfUnitCell(object):
     """ Class that contains the basic unit cell for the skeleton structure of the LGH.
