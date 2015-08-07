@@ -35,19 +35,23 @@ class LGH(object):
     """
 
     def __init__(self,**kwargs):
-        if 'sucell' in kwargs.keys():
-            self.sucell = kwargs['sucell']
-            self.cell = self.sucell.cell
+        if 'base_cell' in kwargs.keys():
+            self.base_cell = kwargs['base_cell']
+            self.cell = self.base_cell.cell
 
         self.adsorbate_list = []
         self.config_list = []
         self.clustergoup_list = []
 
-    def add_sucell(self,sucell):
+        self.base_energy = None
+        self.binding_energies = None
+        self.cluster_energies = None
+
+    def add_base_cell(self,base_cell):
         """Define the unit cell for the surface"""
-        if not hasattr(self,'sucell'):
-            self.sucell = sucell
-            self.cell = sucell.cell
+        if not hasattr(self,'base_cell'):
+            self.base_cell = base_cell
+            self.cell = base_cell.cell
 
     def add_adsorbate(self,adsorbate):
         """Add an adsorbate"""
@@ -60,13 +64,14 @@ class LGH(object):
     def add_config(self,config):
         """Add a configuration"""
         config.set_lgh(self)
+        config.update_species_counts()
+        config.identify_clusters()
         self.config_list.append(config)
 
     def add_configs(self,config_list):
         """Add a list of configurations"""
         for config in config_list:
-            config.set_lgh(self)
-            self.config_list.append(config)
+            self.add_config(config)
 
     def add_clustergroup(self,clustergroup):
         """Add a Cluster Group"""
@@ -82,8 +87,41 @@ class LGH(object):
     def identify_clusters(self,iconf):
         return self.config_list[iconf].identify_clusters()
 
-    def get_species(self):
+    def get_species_names(self):
         return sorted([ads.name for ads in self.adsorbate_list])
+
+    def get_adsorbates(self):
+        return sorted([ads for ads in self.adsorbate_list],
+                      key = lambda x:x.name)
+    def reset(self):
+        """
+        Cleans up the previous calculation and prepares
+        all arrays for a new one
+        """
+
+        self.base_energy = self.base_cell.eini
+        binding_energies = []
+        for ads in self.get_adsorbates:
+            binding_energies.append(ads.eini)
+        self.binding_energies = np.array(binding_energies)
+
+        cluster_energies = []
+        for cluster in self.clustergroup_list:
+            cluster_energies.append(cluster.eini)
+        self.cluster_energies = np.array(cluster_energies)
+
+        for conf in self.config_list:
+            conf.update_species_counts()
+            conf.identify_clusters()
+
+    def get_energy(self,iconf):
+        return self.config_list[iconf].get_energy()
+
+    def err(self):
+        chisq = 0.0
+        for config in self.config_list:
+            chisq += (config.get_energy() - config.eref)**2
+        return chisq
 
     def read_atoms(self,atoms):
         """ Takes an atoms object and identifies the
@@ -96,7 +134,7 @@ class LGH(object):
         # We do not want to mess with the original atoms
         natoms = atoms.copy()
 
-        self._rotate_to_elemtary_cell(natoms)
+        self._rotate_to_elementary_cell(natoms)
 
         size = self._get_atoms_size(natoms)
         print('Found that atoms match a ({0}x{1}) unit cell'.format(*size))
@@ -116,7 +154,7 @@ class LGH(object):
 
         return True
 
-    def _rotate_to_elemtary_cell(self,natoms):
+    def _rotate_to_elementary_cell(self,natoms):
         """ Rotates an atom object so its vectors
         are parallel to those of the elementary unit cell.
 
@@ -134,7 +172,7 @@ class LGH(object):
                       ' differ from the one in the elementary cell')
                 return False
 
-        # Rotate atoms so its x-axis matches that from sucell
+        # Rotate atoms so its x-axis matches that from base_cell
         xdot, xnormal, angle = get_dot_cross_angle(natoms.cell[0],self.cell[0])
         if angle > TOL_ANGLE:
             print('Rotating {} rad to match x axes'.format(angle))
@@ -201,7 +239,7 @@ class LGH(object):
         recognition of adsorbates
         """
 
-        bare_surf = self.sucell.atoms * [size[0],size[1],1]
+        bare_surf = self.base_cell.atoms * [size[0],size[1],1]
 
         max_min_dist = 0.0 # Maximun value of the minumum distance
                            # between atoms of natoms and bare_surf
@@ -262,7 +300,7 @@ class LGH(object):
             sitesdists = []
             for ix in xrange(size[0]):
                 for iy in xrange(size[1]):
-                    for site in self.sucell.sites_list:
+                    for site in self.base_cell.sites_list:
                         pos = ix*self.cell[0] + \
                               iy*self.cell[1] + \
                               site.pos
@@ -280,25 +318,26 @@ class LGH(object):
 
         return config_description
 
-class SurfUnitCell(object):
+class BaseCell(object):
     """ Class that contains the basic unit cell for the skeleton structure of the LGH.
     In our standard use case, this means the surface
     """
-    def __init__(self, atoms, sites_list=None):
+    def __init__(self, atoms, sites_list=None, energy = None):
 
         self.atoms = atoms
-
         self.cell = atoms.cell
         self.nsites = len(sites_list)
-
         self.sites_list = sorted(sites_list,key=lambda site: site.name)
+        self.eini = energy
+        self.e = energy
 
 class Adsorbate(object):
     """
     Defines an adsorbate as to be used in the building and interpreting of
     configurations.
     """
-    def __init__(self, name,  atoms, center = 0, max_radius = None):
+    def __init__(self, name,  atoms, center = 0,
+                    binding_energy = None, max_radius = None):
         """ Initialize an Adsorbate instance
 
         Args:
@@ -331,8 +370,11 @@ class Adsorbate(object):
         if max_radius is not None:
             self.max_radius = max_radius
 
+        self.eini = binding_energy
+        self.e = binding_energy
+
 class Site(object):
-    """Class that defines a site in the SurfaceUnitCell.
+    """Class that defines a site in the BaseCell.
     Heavily inspired in the kmos.types.Site class.
     Thanks to Max Hoffmann for coding that
     """
@@ -383,6 +425,9 @@ class BareCoord(object):
         return any([self.name != other.name,
                     any(self.offset - other.offset)])
 
+    def __repr__(self):
+        return '[BARE_COORD] {0:12s} {1}'.format(self.name,self.offset)
+
 def parse_spec_coord(sc_string):
     spec, terms = sc_string.split('@')
 
@@ -406,6 +451,7 @@ class Config(object):
     def __init__(self,
                  size,
                  species_coords,
+                 energy = None,
                  ):
         """
         Initialize a Configuration instance
@@ -415,7 +461,8 @@ class Config(object):
 
         size (array-like[int]) : Dimensions of the unit cell defining the configuration
 
-        adsorbates ( list [ (name, bare_coord) ] ) : Defines how the surface is filled
+        adsorbates ( list ) : Either a list of (species_name,coord) pairs or of strings of
+            the form 'species@site.(x,y,0)'
         """
         if not len(size) == DIM:
             raise ValueError('Wrong dimension for size!!')
@@ -437,6 +484,11 @@ class Config(object):
                     coord.name,coord.offset))
             self.species_coords.append((spec,coord))
 
+        self.species_counts = None
+        self.cluster_counts = None
+        self.eref = energy
+        self.e = energy
+
     def set_lgh(self,lgh):
         """
         Link the LGH with the current configuration.
@@ -453,33 +505,40 @@ class Config(object):
         return sorted(list(set([spec_coord[1].name
                     for spec_coord in self.species_coords])))
 
-    def get_multiplicity(self):
-        multip = []
-        for spec in self.get_species():
-            multip.append(len([spec_coord for spec_coord in
+    def get_species_count(self):
+        if self.lgh:
+            species_list = [spec.name for spec in self.lgh.get_species_names()]
+        else:
+            species_list = self.get_species()
+        count = []
+        for spec in species_list:
+            count.append(len([spec_coord for spec_coord in
                                self.species_coords if spec_coord[0] == spec]))
-        return np.array(multip)
+        return np.array(count)
+
+    def update_species_counts(self):
+        self.species_counts = self.get_species_count()
 
     def get_coverages(self):
         surf = 1
         for i in xrange(DIM):
             surf *= self.size[i]
-        return self.get_multiplicity() / float(surf)
+        return self.species_counts / float(surf)
 
     def return_atoms(self):
         """Builds the atoms object that corresponds to the configuration
         """
-        atoms = self.lgh.sucell.atoms * [self.size[0],self.size[1],1]
+        atoms = self.lgh.base_cell.atoms * [self.size[0],self.size[1],1]
 
         for species, coord in self.species_coords:
             adsorbate = [ads for ads in self.lgh.adsorbate_list
                           if ads.name == species][0]
-            site = [ssite for ssite in self.lgh.sucell.sites_list
+            site = [ssite for ssite in self.lgh.base_cell.sites_list
                     if ssite.name == coord.name][0]
 
-            rcoord = ((coord.offset[0]+site.pos[0])*self.lgh.sucell.cell[0]
-                     + (coord.offset[1]+site.pos[1])*self.lgh.sucell.cell[1]
-                     +  site.pos[2]*self.lgh.sucell.cell[2])
+            rcoord = ((coord.offset[0]+site.pos[0])*self.lgh.base_cell.cell[0]
+                     + (coord.offset[1]+site.pos[1])*self.lgh.base_cell.cell[1]
+                     +  site.pos[2]*self.lgh.base_cell.cell[2])
 
             ads_positions = adsorbate.atoms.get_positions()
             for ads_pos in ads_positions:
@@ -491,13 +550,17 @@ class Config(object):
         return atoms
 
     def calculate_matrix(self):
+        """
+        Prepares a reperesentation of the configuration in matrix form,
+        which facilitates identifying clusters
+        """
 
         if not self.lgh:
             species_list = self.get_species()
             sites_list = self.get_sites()
         else:
-            species_list = self.lgh.get_species()
-            sites_list = [s.name for s in self.lgh.sucell.sites_list]
+            species_list = self.lgh.get_species_names()
+            sites_list = [s.name for s in self.lgh.base_cell.sites_list]
 
         matrix = np.zeros([self.size[0],self.size[1],len(sites_list)],int)
 
@@ -514,8 +577,8 @@ class Config(object):
         """
         if not hasattr(self,'matrix'):
             self.calculate_matrix()
-        species_list = self.lgh.get_species()
-        sites_list = [s.name for s in self.lgh.sucell.sites_list]
+        species_list = self.lgh.get_species_names()
+        sites_list = [s.name for s in self.lgh.base_cell.sites_list]
 
         count = [0,]*len(self.lgh.clustergoup_list)
         # Go through all the surface
@@ -557,22 +620,32 @@ class Config(object):
                                 # print('In position {},{}'.format(ix,iy))
                                 count[icg] += 1
                                 # print('Counted one for {}'.format(cluster_group.name))
-        for icg, cluster_group in enumerate(self.lgh.clustergoup_list):
-            print('Count for cluster {0} = {1:d}'.format(cluster_group.name,count[icg]))
+        self.counts = np.array(count)
+        # for icg, cluster_group in enumerate(self.lgh.clustergoup_list):
+        #     print('Count for cluster {0} = {1:d}'.format(cluster_group.name,count[icg]))
+
+    def get_energy(self):
+        if not self.lgh:
+            raise UserWarning('Need a lgh to calculate energy')
+            return False
+
+        ebase = self.lgh.base_energy
+        return self.lgh.base_energy*np.prod(self.size) \
+               + np.dot(self.species_counts,self.lgh.binding_energies) \
+               + np.dot(self.cluster_counts,self.lgh.cluster_energies)
 
     def __eq__(self,other):
         ## TODO build this
         return False
 
     def __repr__(self):
-        rep = 'CONF ({0}x{1})\n'.format(*self.size)
+        rep = '[CONF] ({0}x{1})\n'.format(*self.size)
         for spec, coord in self.species_coords:
             rep += '  {0}@{1}.({2},{3},0)\n'.format(spec,
                                                  coord.name,
                                                  coord.offset[0],
                                                  coord.offset[1])
         return rep
-
 
 class Cluster(object):
     """
@@ -594,10 +667,61 @@ class ClusterGroup(object):
     """
     def __init__(self, name, energy, cluster_list):
         self.name = name
-        self.energy = energy
+
+        self.eini = energy
+        self.e = energy
+
         self.clusters = []
         for cluster_def in cluster_list:
             if isinstance(cluster_def,Cluster):
                 self.clusters.append(cluster_def)
             else:
                 self.clusters.append(Cluster(cluster_def))
+
+
+
+class LGHOptimizer(object):
+    """
+    The object that optimizes the LGH!!
+    """
+    def __init__(self,LGH, opt_surf_ene = False, opt_bindings = False):
+
+        self.lgh = LGH
+        if opt_surf_ene and opt_bindings:
+            fixed_list = []
+            for conf in self.lgh.config_list:
+                fixed_list.append(np.concatenate( ([np.prod(conf.size),],
+                                              conf.species_counts,
+                                              conf.cluster_counts )))
+            self.fixed_array = np.array(fixed_list)
+
+            self.free = np.concatenate( ([self.lgh.base_energy,],
+                                    self.lgh.binding_energies,
+                                    self.lgh.cluster_energies,))
+
+        elif opt_bindings:
+            fixoff = []
+            fixed_list = []
+            for conf in self.lgh.config_list:
+                fixoff.append(self.lgh.base_energy*np.prod(conf.size))
+                fixed_list.append(np.concatenate( (conf.species_counts,
+                                                   conf.cluster_counts )))
+            self.fixed_array = np.array(fixed_list)
+
+            self.free = np.concatenate( (self.lgh.binding_energies,
+                                         self.lgh.cluster_energies,))
+
+        elif not any(opt_bindings,opt_surf_ene):
+            fixoff = []
+            fixed_list = []
+            for conf in self.lgh.config_list:
+                fixoff.append(self.lgh.base_energy*np.prod(conf.size) +
+                              np.dot(self.lgh.binding_energy,conf.species_counts))
+                fixed_list.append(conf.cluster_counts)
+
+            self.fixed_array = np.array(fixed_list)
+
+            self.free = self.lgh.cluster_energies.copy()
+
+    def err(self,free):
+        ####
