@@ -13,13 +13,13 @@ DIM = 2  # We use this as a parameter, but probably will always be fixed
 DELTA_H_SMALL = 1.0 # Default height over the surface to place adsorbates
 
 TOL_ANGLE = 1e-9
-TOL_DIST = 1e-9
+TOL_DIST = 1e-6
 
 zvect = np.array([0.,0.,1.])
 
 def get_dot_cross_angle(v1,v2):
     """
-    Wraps the operations to get angles
+    Wraps the operations of geting angles
     between vectors to reduce code repetition
     """
     cross = np.cross(v1,v2)
@@ -95,6 +95,34 @@ class LGH(object):
         """
         # We do not want to mess with the original atoms
         natoms = atoms.copy()
+
+        self._rotate_to_elemtary_cell(natoms)
+
+        size = self._get_atoms_size(natoms)
+        print('Found that atoms match a ({0}x{1}) unit cell'.format(*size))
+
+        self._remove_surface(natoms,size)
+
+        # spliting geometry using C. Schober's tool
+        fragments = cluster(natoms)
+
+        # And sort out which fragments are where adsorbed
+        config_description = self._sort_fragments(size,natoms,fragments)
+
+        conf = Config(size,config_description)
+        print('Identified configuration')
+        print(conf)
+        self.add_config(conf)
+
+        return True
+
+    def _rotate_to_elemtary_cell(self,natoms):
+        """ Rotates an atom object so its vectors
+        are parallel to those of the elementary unit cell.
+
+        Returns False when the unite cell vector directions
+        do not match
+        """
         # We can first use the unit cell vectors angles
         for pairs in [(0,1,),(1,2,),(2,0)]:
             _, _, a_cell = get_dot_cross_angle(self.cell[pairs[0]],
@@ -139,7 +167,14 @@ class LGH(object):
                 raise RuntimeError(
             'Something went wrong! Angle of axes {} do not match'.format(i))
 
-        # Check lengths
+        return True
+
+    def _get_atoms_size(self,natoms):
+        """
+        Returns the size of the atoms objects as compared
+        to the elementary unit cell
+        """
+
         fnx = np.linalg.norm(natoms.cell[0]) \
                  / np.linalg.norm(self.cell[0])
         nx = round(fnx)
@@ -156,22 +191,70 @@ class LGH(object):
             return False
         ny = int(ny)
 
-        size = (nx,ny)
+        return (nx,ny)
 
-        print('Found that atoms match a ({0}x{1}) unit cell'.format(*size))
+    def _remove_surface(self,natoms,size):
+        """
+        Tries to match the predicted surface to the
+        surface contained in the atoms object and removes
+        those atoms from it, so as to facilitate the
+        recognition of adsorbates
+        """
 
-        # spliting geometry using C. Schobers tool
-        fragments = cluster(natoms)
+        bare_surf = self.sucell.atoms * [size[0],size[1],1]
 
-        conf_def = []
-
-        for frag in fragments:
-            for ads in self.adsorbate_list:
-                if (frag.get_chemical_symbols() ==
-                    ads.atoms.get_chemical_symbols()):
-                    break
+        max_min_dist = 0.0 # Maximun value of the minumum distance
+                           # between atoms of natoms and bare_surf
+        for nat in natoms:
+            dists = [(sat.position[2] - nat.position[2]) for sat in
+                      bare_surf if nat.symbol == sat.symbol]
+            if dists:
+                dz_min = min(dists, key = lambda x:abs(x))
             else:
                 continue
+            if abs(dz_min) > abs(max_min_dist):
+                max_min_dist = dz_min
+
+        if abs(max_min_dist) > TOL_DIST:
+            print("Correcting surface for z displacement by {0} A".format(
+                                                        max_min_dist))
+            natoms.translate(np.array([0.,0.,max_min_dist]))
+
+        # As a failure check we will enforce that atoms constrained
+        # in the elemetary cell need match very well the atoms in the
+        # case being tested
+        const_ind = []
+        if bare_surf.constraints:
+            for const in bare_surf.constraints:
+                const_ind.extend(list(const.index))
+
+        from ase.visualize import view
+
+        for isat, sat in enumerate(bare_surf):
+            num_dists = [ (i,np.linalg.norm(sat.position-nat.position)) for
+                          i,nat in enumerate(natoms) if nat.symbol == sat.symbol]
+            imin, dmin = min(num_dists, key = lambda x:x[1])
+            if (isat in const_ind) and (dmin > TOL_DIST):
+                raise ValueError('Constrained substrate atoms do not'
+                                 ' match surface structure by {}'.format(dmin))
+            natoms.pop(imin)
+
+    def _sort_fragments(self,size,natoms,fragments):
+        """ Sorts a list of ase.Atoms objects (fragments)
+        into configurations on the defined surface
+        """
+        frag_symbs = [frag.get_chemical_symbols() for frag in fragments]
+        ads_symbs = [ads.atoms.get_chemical_symbols() for ads
+                     in self.adsorbate_list]
+
+        config_description = []
+        for ifr, frag in enumerate(fragments):
+            for iads, ads_symb in enumerate(ads_symbs):
+                if (frag_symbs[ifr] == ads_symb):
+                    break
+            else:
+                raise ValueError('Fragment {}'.format(frag.get_chemical_symbols())+
+                                 ' not recognized')
             cmpos = frag.get_center_of_mass()
             # project center of mass to xy plane
             cmpos = project_to_plane(cmpos,natoms.cell[0],natoms.cell[1])
@@ -186,17 +269,16 @@ class LGH(object):
                         pos = project_to_plane(pos,
                                                natoms.cell[0],
                                                natoms.cell[1])
-                        # print(pos)
-                        # print(cmpos)
                         dist = np.linalg.norm(pos-cmpos)
                         sitesdists.append(((ix,iy,site.name),dist))
             site = min(sitesdists,key = lambda x: x[1])
-            # print(site[0][2])
-            descr = '{}@{}.({},{},0)'.format(ads.name,site[0][2],
-                                              site[0][0],site[0][1])
-            print('Found adsorbate {}'.format(descr))
+            descr = '{}@{}.({},{},0)'.format(self.adsorbate_list[iads].name,
+                                             site[0][2],
+                                             site[0][0],
+                                             site[0][1])
+            config_description.append(descr)
 
-        return natoms
+        return config_description
 
 class SurfUnitCell(object):
     """ Class that contains the basic unit cell for the skeleton structure of the LGH.
@@ -481,6 +563,16 @@ class Config(object):
     def __eq__(self,other):
         ## TODO build this
         return False
+
+    def __repr__(self):
+        rep = 'CONF ({0}x{1})\n'.format(*self.size)
+        for spec, coord in self.species_coords:
+            rep += '  {0}@{1}.({2},{3},0)\n'.format(spec,
+                                                 coord.name,
+                                                 coord.offset[0],
+                                                 coord.offset[1])
+        return rep
+
 
 class Cluster(object):
     """
