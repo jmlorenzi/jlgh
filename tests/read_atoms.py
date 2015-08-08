@@ -1,4 +1,4 @@
-from jlgh.lattice import *
+from jlgh import *
 import numpy as np
 import ase.lattice.surface as surf
 from ase.io.castep import read_cell

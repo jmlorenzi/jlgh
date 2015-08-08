@@ -1,7 +1,7 @@
 import ase
 import ase.lattice.surface as surf
 from ase.visualize import view
-import jlgh.lattice as jl
+import jlgh as jl
 
 slab = surf.fcc100('Pd',[1,1,4],vacuum = 10)
 # view(slab*[2,2,1])
