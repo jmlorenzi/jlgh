@@ -5,3 +5,8 @@ Tools for building Cluster Expansion Hamiltonians for surface chemistry using py
 * Requires
 
 python-ase
+struformat (non available)
+
+* Current Tasks
+
+** TODO Change dependency from struformat to free software
