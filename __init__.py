@@ -30,9 +30,71 @@ def get_dot_cross_angle(v1,v2):
 
 class LGH(object):
     """
-    Contains the definition of the LGH, including the set of all posible
-    adsorbates, the set of all cluster and all the configurations to be
-    fitted to the cluster expansion model
+    Main class of the module, contains all other elements that help you
+    define the Cluster Expansion.
+
+    ``Attributes''
+    -------------
+        base_cell (BaseCell) : Definition of the basic surface cell
+
+        adsorbate_list (List(Adsorbate)) : List of all species
+
+        clustergroup_list (List(ClusterGroup)) : List of all clusters
+
+        config_list (List(Config)) : List of all configurations
+
+        base_energy (float) : Energy of a 1x1 empty surface slab
+
+        binding_energy (np.ndarray(float)) : List of the energies of
+            the adsorbates in the ZCL (with respect to the clean surface,
+            NOT the clean surface + gas phase)
+
+        cluster_energy (np.ndarray(float)) : Energy contributions of
+            each cluster
+
+        nspecies (int) : Number of species
+
+        nclusters (int) : Number of cluster groups
+
+        nconfig (int) : Number of configurations
+
+    ``Methods''
+    -----------
+        add_base_cell : add a BaseCell instance
+
+        add_adsorbate : add an adsorbate
+
+        add_adsorbates : add a list of adsorbates
+
+        add_clustergroup : add a cluster group
+
+        add_clustergroups : add a list of cluster groups
+
+        add_config : Add a configuration and update its own methods
+            to accomodate to this LGH
+
+        add_configs : Add a list of configurations (and
+            update each one accordingly)
+
+        get_atoms : Construct and return an ase.Atoms object
+            representing the one of the configurations
+
+        identify_clusters : Calculate the multiplicity of clusters
+            in one of the configurations, and save
+
+        get_species_names : Get a list of adsorbates names in alphabetical
+            order
+
+        get_adsorbates : Get a list of adsorbates in alphabetical order
+
+        reset : Update the LGH state to make it ready for an optimization.
+
+        get_energy : Returns the (cluster expansion) energy corresponding
+            to the selected configuration
+
+        err : Return the error of the LGH
+
+        read_atoms : Adds a configuration to the LGH from an atoms objects
     """
 
     def __init__(self,**kwargs):
@@ -92,6 +154,7 @@ class LGH(object):
     def get_adsorbates(self):
         return sorted([ads for ads in self.adsorbate_list],
                       key = lambda x:x.name)
+
     def reset(self):
         """
         Cleans up the previous calculation and prepares
@@ -684,8 +747,6 @@ class ClusterGroup(object):
                 self.clusters.append(cluster_def)
             else:
                 self.clusters.append(Cluster(cluster_def))
-
-
 
 class LGHOptimizer(object):
     """
