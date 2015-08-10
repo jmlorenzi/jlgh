@@ -84,7 +84,7 @@ class LGH(object):
         get_atoms : Construct and return an ase.Atoms object
             representing the one of the configurations
 
-        identify_clusters : Calculate the multiplicity of clusters
+        _count_clusters : Calculate the multiplicity of clusters
             in one of the configurations, and save
 
         get_species_names : Get a list of adsorbates names in alphabetical
@@ -138,8 +138,8 @@ class LGH(object):
     def add_config(self,config):
         """Add a configuration"""
         config.set_lgh(self)
-        config.update_species_counts()
-        config.identify_clusters()
+        config._count_species()
+        config._count_clusters()
         self.config_list.append(config)
 
     def add_configs(self,config_list):
@@ -224,27 +224,24 @@ class LGH(object):
 
         # Save configs
         for config in self.config_list:
-            cnum = config._get_number()
-            config_dir = os.path.join(self.directory,
-                                       '{0:d}x{1:d}'.format(*config.size),
-                                       cnum)
-            if not os.path.isdir(config_dir):
-                os.makedirs(config_dir)
-            config_trajf_name = os.path.join(config_dir,'conf.traj')
+            if not os.path.isdir(config.directory):
+                os.makedirs(config.directory)
+            config_trajf_name = os.path.join(config.directory,
+                                             'initial.traj')
             if save_atoms:
                 if any([overwrite_atoms,
                         not os.path.exists(config_trajf_name)]):
                     ase.io.write(config_trajf_name,
                                  config.return_atoms())
-            with open(os.path.join(config_dir,'counts'),'w') as fcounts:
+            with open(os.path.join(config.directory,'counts'),'w') as fcounts:
                 fcounts.write(('{:d} ' * self.nclusters).format(
                                  *config.cluster_counts) + '\n')
 
     def get_atoms(self,iconf):
         return self.config_list[iconf].get_atoms()
 
-    def identify_clusters(self,iconf):
-        return self.config_list[iconf].identify_clusters()
+    def _count_clusters(self,iconf):
+        return self.config_list[iconf]._count_clusters()
 
     def get_species_names(self):
         return sorted([ads.name for ads in self.adsorbate_list])
@@ -288,8 +285,7 @@ class LGH(object):
 
         self.sort_configs()
         for conf in self.config_list:
-            conf.update_species_counts()
-            conf.identify_clusters()
+            conf.update()
 
     def get_energy(self,iconf):
         return self.config_list[iconf].get_energy()
@@ -569,7 +565,7 @@ class Config(object):
                                self.species_coords if spec_coord[0] == spec]))
         return np.array(count)
 
-    def update_species_counts(self):
+    def _count_species(self):
         self.species_counts = self.get_species_count()
 
     def get_coverages(self):
@@ -577,6 +573,21 @@ class Config(object):
         for i in xrange(DIM):
             surf *= self.size[i]
         return self.species_counts / float(surf)
+
+    def update(self):
+        """
+        Update configuration's attributes
+
+        Counts the number of species, the multiplicity of each defined
+        cluster and saves the directory where the configuration will be
+        stored
+        """
+        self._count_species()
+        self._count_clusters()
+
+        self.directory = os.path.join(self.lgh.directory,
+                                      '{0:d}x{1:d}'.format(*self.size),
+                                      self._get_number()
 
     def return_atoms(self):
         """Builds the atoms object that corresponds to the configuration
@@ -650,7 +661,7 @@ class Config(object):
 
         self.matrix = matrix
 
-    def identify_clusters(self):
+    def _count_clusters(self):
         """ Count the number of repetitions for each cluster in the LGH
         """
         if not hasattr(self,'matrix'):
@@ -731,7 +742,6 @@ class Config(object):
                                                   ' for the species...'
                                                   ' 35 is too many...')
                     num = ch + num
-
         return num
 
 
