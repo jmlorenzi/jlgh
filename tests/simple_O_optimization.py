@@ -5,7 +5,6 @@ from ase.constraints import FixAtoms
 from ase.utils.geometry import get_layers
 
 Pd_latconst = 3.937211
-
 slab = surf.fcc100('Pd',a = Pd_latconst,size = [1,1,4],vacuum = 10)
 slab.set_constraint(FixAtoms(indices = [ il[0] for il
                         in enumerate(get_layers(slab,(0,0,1))[0])
@@ -17,7 +16,7 @@ sites = [ Site(name='hollow', pos=[.5,.5,h0]),]
 
 E_2x2 = -56199.75241886
 
-base_cell = BaseCell(slab,sites_list=sites,energy=E_2x2/4.)
+base_cell = BaseCell(slab,site_list=sites,energy=E_2x2/4.)
 
 
 Oatoms = ase.Atoms('O',positions=[[0.0,0.0,1.0],])
@@ -39,11 +38,12 @@ enes_defs = [ (-57077.82959288, ('O@hollow.(0,0,0)','O@hollow.(1,0,0)')),
 
 conf_list = [Config(size=[2,2],species_coords = ed[1],energy =ed [0]) for ed in enes_defs]
 
-lgh = LGH(base_cell = base_cell)
+lgh = LGH(name = 'simple_O_lgh', directory = './simple_O_lgh', base_cell = base_cell)
 lgh.add_adsorbate(Oads)
 lgh.add_clustergroups([V_O_O_1NN,V_O_O_2NN])
 lgh.add_configs(conf_list)
 lgh.reset()
+lgh.save()
 
 optim = LGHOptimizer(lgh)
 

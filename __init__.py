@@ -104,8 +104,10 @@ class LGH(object):
         if 'base_cell' in kwargs.keys():
             self.base_cell = kwargs['base_cell']
 
-        if 'dir' in kwargs.keys():
-            self.dir = sys.path.abspath(kwargs['dir'])
+        if 'directory' in kwargs.keys():
+            self.directory = os.path.abspath(kwargs['directory'])
+        else:
+            self.directory = os.path.abspath('')
 
         if 'name' in kwargs.keys():
             self.name = kwargs['name']
@@ -151,6 +153,91 @@ class LGH(object):
         """Add a Cluster Group"""
         self.clustergroup_list.extend(clustergroup_list)
 
+    def save(self, save_atoms = True, overwrite_atoms = True):
+        """
+        Save the Cluster Expansion definition and components
+        """
+        if not os.path.isdir(self.directory):
+            os.mkdir(self.directory)
+
+        general_outf_name = os.path.join(self.directory,self.name)
+        general_outf = open(general_outf_name,'w')
+
+        general_outf.write('#'*72+'\n')
+        general_outf.write('#  {0:68}#'.format('jlgh Cluster Expansion')+'\n')
+        general_outf.write('#'*72+'\n')
+        general_outf.write('name : {}\n'.format(self.name))
+        general_outf.write('nsites : {}\n'.format(self.nsites))
+        general_outf.write(('sites : ' +
+                             ('{} '*self.nsites)).format(*self.get_site_names())
+                             +'\n')
+        general_outf.write('nspecies : {}\n'.format(self.nspecies))
+        general_outf.write(('species : ' +
+                             ('{} '*self.nspecies)).format(*self.get_species_names())
+                             +'\n')
+
+
+        general_outf.write('\nnclusters : {}\n'.format(self.nclusters))
+        general_outf.write('cluster groups :'+'\n')
+        for clustergroup in self.clustergroup_list:
+            general_outf.write( ('{} : '
+                                 + '{} '*clustergroup.nclusters).format(
+                                     clustergroup.name,
+                                     *clustergroup.clusters)+
+                                     '\n')
+        general_outf.close()
+
+
+        # Save base_cell
+        if not os.path.isdir(os.path.join(self.directory,'base')):
+            os.mkdir(os.path.join(self.directory,'base'))
+
+        base_trajf_name = os.path.join(self.directory,'base','base.traj')
+        ase.io.write(base_trajf_name,self.base_cell.atoms) ###
+
+        base_outf_name = os.path.join(self.directory,'base','base')
+        base_outf = open(base_outf_name,'w')
+        base_outf.write('# Base file \n')
+        base_outf.write('sites: \n')
+        for site in self.base_cell.site_list:
+            base_outf.write('{} : {} \n'.format(site.name, site.pos))
+        base_E0_name = os.path.join(self.directory,'base','E0')
+        with open(base_E0_name,'w') as base_E0:
+            base_E0.write('{0:.12f}\n'.format(self.base_cell.eini))
+
+        # Save adsorbates
+        for ads in self.get_adsorbates():
+            ads_dir = os.path.join(self.directory,
+                                    ads.name,)
+            if not os.path.isdir(ads_dir):
+                os.mkdir(ads_dir)
+            ads_trajf_name = os.path.join(ads_dir,
+                                           '{}.traj'.format(ads.name))
+            ase.io.write(ads_trajf_name,ads.atoms)
+            ads_E0_name = os.path.join(self.directory,
+                                        ads.name,
+                                        'E0')
+            with open(ads_E0_name,'w') as ads_E0:
+                ads_E0.write('{0:.12f}\n'.format(ads.eini))
+
+        # Save configs
+        for config in self.config_list:
+            cnum = config._get_number()
+            config_dir = os.path.join(self.directory,
+                                       '{0:d}x{1:d}'.format(*config.size),
+                                       cnum)
+            if not os.path.isdir(config_dir):
+                os.makedirs(config_dir)
+            config_trajf_name = os.path.join(config_dir,'conf.traj')
+            if save_atoms:
+                if any([overwrite_atoms,
+                        not os.path.exists(config_trajf_name)]):
+                    ase.io.write(config_trajf_name,
+                                 config.return_atoms())
+            with open(os.path.join(config_dir,'counts'),'w') as fcounts:
+                fcounts.write(('{:d} ' * self.nclusters).format(
+                                 *config.cluster_counts) + '\n')
+
     def get_atoms(self,iconf):
         return self.config_list[iconf].get_atoms()
 
@@ -160,9 +247,20 @@ class LGH(object):
     def get_species_names(self):
         return sorted([ads.name for ads in self.adsorbate_list])
 
+    def get_site_names(self):
+        return [site.name for site in self.base_cell.site_list]
+
     def get_adsorbates(self):
         return sorted([ads for ads in self.adsorbate_list],
                       key = lambda x:x.name)
+
+    def sort_configs(self):
+        self.config_list = sorted(self.config_list,
+                                  key = lambda x:(x.size[0],
+                                                  x.size[1],
+                                                  int(x._get_number())
+                                                  )
+                                  )
 
     def reset(self):
         """
@@ -171,6 +269,7 @@ class LGH(object):
         """
 
         self.nspecies = len(self.adsorbate_list)
+        self.nsites = self.base_cell.nsites
         self.nconf = len(self.config_list)
         self.nclusters = len(self.clustergroup_list)
 
@@ -185,6 +284,7 @@ class LGH(object):
             cluster_energies.append(cluster.eini)
         self.cluster_energies = np.array(cluster_energies)
 
+        self.sort_configs()
         for conf in self.config_list:
             conf.update_species_counts()
             conf.identify_clusters()
@@ -375,7 +475,7 @@ class LGH(object):
             sitesdists = []
             for ix in xrange(size[0]):
                 for iy in xrange(size[1]):
-                    for site in self.base_cell.sites_list:
+                    for site in self.base_cell.site_list:
                         pos = ix*self.base_cell.cell[0] + \
                               iy*self.base_cell.cell[1] + \
                               site.pos
@@ -484,7 +584,7 @@ class Config(object):
         for species, coord in self.species_coords:
             adsorbate = [ads for ads in self.lgh.adsorbate_list
                           if ads.name == species][0]
-            site = [ssite for ssite in self.lgh.base_cell.sites_list
+            site = [ssite for ssite in self.lgh.base_cell.site_list
                     if ssite.name == coord.name][0]
 
             rcoord = ((coord.offset[0]+site.pos[0])*self.lgh.base_cell.cell[0]
@@ -508,18 +608,18 @@ class Config(object):
 
         if not self.lgh:
             species_list = self.get_species()
-            sites_list = self.get_sites()
+            site_list = self.get_sites()
         else:
             species_list = self.lgh.get_species_names()
-            sites_list = [s.name for s in self.lgh.base_cell.sites_list]
+            site_list = [s.name for s in self.lgh.base_cell.site_list]
 
-        matrix = np.zeros([self.size[0],self.size[1],len(sites_list)],int)
+        matrix = np.zeros([self.size[0],self.size[1],len(site_list)],int)
 
         # Fill up the matrix
         for spec, coord in self.species_coords:
             matrix[coord.offset[0],
                    coord.offset[1],
-                   sites_list.index(coord.name)] = (species_list.index(spec) + 1)
+                   site_list.index(coord.name)] = (species_list.index(spec) + 1)
 
         self.matrix = matrix
 
@@ -529,7 +629,7 @@ class Config(object):
         if not hasattr(self,'matrix'):
             self.calculate_matrix()
         species_list = self.lgh.get_species_names()
-        sites_list = [s.name for s in self.lgh.base_cell.sites_list]
+        site_list = [s.name for s in self.lgh.base_cell.site_list]
 
         count = [0,]*len(self.lgh.clustergroup_list)
         # Go through all the surface
@@ -542,38 +642,23 @@ class Config(object):
                         for cent_spec, cent_coord in cluster.species_coords:
                             # twice, since we need to account for shifts
                             if not ( self.matrix[ix,iy,
-                                    sites_list.index(cent_coord.name)] ==
+                                    site_list.index(cent_coord.name)] ==
                                     (species_list.index(cent_spec)+1)):
                                 continue
-                            # print('Conf Coord {},{}'.format(ix,iy))
-                            # print('Cent Coord name: {}'.format(cent_coord.name))
-                            # print('Cent Coord offset: {},{}'.format(cent_coord.offset[0],
-                            #                                         cent_coord.offset[1]))
-                            # print(len([ x for x in
-                            #     cluster.species_coords if x[1] != cent_coord]))
-
                             for spec, coord in [ x for x in
                                 cluster.species_coords if x[1] != cent_coord]:
-                                # get coordinates relative to the center,
-                                # folded into the central copy
                                 xrel = (ix + coord.offset[0] - cent_coord.offset[0])\
                                   % self.size[0]
                                 yrel = (iy + coord.offset[1] - cent_coord.offset[1])\
                                   % self.size[1]
                                 if not ( self.matrix[xrel,
                                                    yrel,
-                                                   sites_list.index(coord.name)]
+                                                   site_list.index(coord.name)]
                                     == (species_list.index(spec) + 1 )):
-                                    # print('Skipped')
                                     break
                             else:
-                                # print('Found match for cluster {}'.format(cluster_group.name))
-                                # print('In position {},{}'.format(ix,iy))
                                 count[icg] += 1
-                                # print('Counted one for {}'.format(cluster_group.name))
         self.cluster_counts = np.array(count)
-        # for icg, cluster_group in enumerate(self.lgh.clustergroup_list):
-        #     print('Count for cluster {0} = {1:d}'.format(cluster_group.name,count[icg]))
 
     def get_energy(self):
         if not self.lgh:
@@ -601,17 +686,41 @@ class Config(object):
                                                  coord.offset[1])
         return rep
 
+    def _get_number(self):
+        """
+        Returns a number identifies the config in the lgh
+        """
+        num = ''
+        for iy in xrange(self.size[1]):
+            for ix in xrange(self.size[0]):
+                for isite in xrange(self.lgh.nsites):
+                    n = self.matrix[ix,iy,isite]
+                    if n <= 9:
+                        ch = str(n)
+                    elif n <= (ord('Z') - ord('A') + 10):
+                        ch = chr(ord('A') + n - 10)
+                    else:
+                        raise NotImplementedError('I ran out of letters'
+                                                  ' for the species...'
+                                                  ' 35 is too many...')
+                    num = ch + num
+
+        return num
+
+
+
+
 
 class BaseCell(object):
     """ Class that contains the basic unit cell for the skeleton structure of the LGH.
     In our standard use case, this means the surface
     """
-    def __init__(self, atoms, sites_list=None, energy = None):
+    def __init__(self, atoms, site_list=None, energy = None):
 
         self.atoms = atoms
         self.cell = atoms.cell
-        self.nsites = len(sites_list)
-        self.sites_list = sorted(sites_list,key=lambda site: site.name)
+        self.nsites = len(site_list)
+        self.site_list = sorted(site_list,key=lambda site: site.name)
         self.eini = energy
         self.e = energy
 
@@ -620,7 +729,7 @@ class Adsorbate(object):
     Defines an adsorbate as to be used in the building and interpreting of
     configurations.
     """
-    def __init__(self, name,  atoms, center = 0,
+    def __init__(self, name,  atoms, center = [0,0,0],
                     binding_energy = None, max_radius = None):
         """ Initialize an Adsorbate instance
 
@@ -740,6 +849,17 @@ class Cluster(object):
             self.species_coords.append((spec,coord))
         self.mult = len(self.species_coords)
 
+    def __repr__(self):
+        rep = '('
+        for spec, coord in self.species_coords:
+            rep += "'{0}@{1}.({2},{3},0)',".format(spec,
+                                             coord.name,
+                                             coord.offset[0],
+                                             coord.offset[1])
+        rep += ')'
+        return rep
+
+
 class ClusterGroup(object):
     """
     Class that holds a cluster group. That is all clusters that are equivalent through
@@ -757,6 +877,8 @@ class ClusterGroup(object):
                 self.clusters.append(cluster_def)
             else:
                 self.clusters.append(Cluster(cluster_def))
+
+        self.nclusters = len(self.clusters)
 
 class LGHOptimizer(object):
     """
