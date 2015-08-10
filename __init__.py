@@ -4,11 +4,13 @@ the objects used to define the LGH
 """
 
 import ase
+import ase.io
+from ase.constraints import FixAtoms, FixedLine
 import ase.lattice.surface
 import numpy as np
 # from jlgh.tools import *
 from struformat.molcrys import cluster
-import time, scipy, sys
+import time, scipy, sys, os
 
 DIM = 2  # We use this as a parameter, but probably will always be fixed
 DELTA_H_SMALL = 1.0 # Default height over the surface to place adsorbates
@@ -36,7 +38,7 @@ class LGH(object):
     ``Attributes''
     -------------
 
-        dir (str) : Directory where the LGH is saved
+        directory (str) : Directory where the LGH is saved
 
         base_cell (BaseCell) : Definition of the basic surface cell
 
@@ -596,8 +598,33 @@ class Config(object):
                 ads_pos += rcoord
 
             toadd = adsorbate.atoms.copy()
-            toadd.set_positions(ads_positions)
+
+            new_constraints = []
+            if toadd.constraints:
+                for constr in toadd.constraints:
+                    if isinstance(constr, FixAtoms):
+                        new_indices = []
+                        for n, val in enumerate(constr.index):
+                            if val.dtype.name.startswith('bool'):
+                                if not val:
+                                    continue
+                                new_indices.append(n+len(atoms))
+                            elif val.dtype.name.startswith('int'):
+                                new_indices.append(val+len(atoms))
+                        new_constraints.append(FixAtoms(indices = new_indices))
+                    elif isinstance(constr, FixedLine):
+                        new_constraints.append(FixedLine(
+                                                a = constr.a+len(atoms),
+                                                direction = constr.dir))
+                    else:
+                        raise NotImplementedError(
+                          'Constraint of type {}'.format(type(costr)) +
+                          ' not implemented yet for adsorbates')
+
+            toadd.positions = ads_positions
+            old_constraints = atoms._get_constraints()
             atoms += toadd
+            atoms.set_constraint(old_constraints + new_constraints)
         return atoms
 
     def calculate_matrix(self):
