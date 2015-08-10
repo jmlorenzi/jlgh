@@ -8,7 +8,7 @@ import ase.lattice.surface
 import numpy as np
 # from jlgh.tools import *
 from struformat.molcrys import cluster
-import time, scipy
+import time, scipy, sys
 
 DIM = 2  # We use this as a parameter, but probably will always be fixed
 DELTA_H_SMALL = 1.0 # Default height over the surface to place adsorbates
@@ -35,6 +35,9 @@ class LGH(object):
 
     ``Attributes''
     -------------
+
+        dir (str) : Directory where the LGH is saved
+
         base_cell (BaseCell) : Definition of the basic surface cell
 
         adsorbate_list (List(Adsorbate)) : List of all species
@@ -100,6 +103,12 @@ class LGH(object):
     def __init__(self,**kwargs):
         if 'base_cell' in kwargs.keys():
             self.base_cell = kwargs['base_cell']
+
+        if 'dir' in kwargs.keys():
+            self.dir = sys.path.abspath(kwargs['dir'])
+
+        if 'name' in kwargs.keys():
+            self.name = kwargs['name']
 
         self.adsorbate_list = []
         self.config_list = []
@@ -729,6 +738,7 @@ class Cluster(object):
             else:
                 spec, coord = spec_coord
             self.species_coords.append((spec,coord))
+        self.mult = len(self.species_coords)
 
 class ClusterGroup(object):
     """
@@ -793,8 +803,6 @@ class LGHOptimizer(object):
             self.free = self.lgh.cluster_energies.copy()
         else:
             raise NotImplementedError('lalal')
-
-
 
         self.off = np.array(fixoff_list)
         self.fix = np.array(fixed_list)
