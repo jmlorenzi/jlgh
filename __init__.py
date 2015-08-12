@@ -10,7 +10,7 @@ import ase.lattice.surface
 import numpy as np
 # from jlgh.tools import *
 from struformat.molcrys import cluster
-import time, scipy, sys, os
+import time, scipy, sys, os, glob
 
 DIM = 2  # We use this as a parameter, but probably will always be fixed
 DELTA_H_SMALL = 1.0 # Default height over the surface to place adsorbates
@@ -29,6 +29,57 @@ def get_dot_cross_angle(v1,v2):
     dot = np.dot(v1,v2)
     angle = np.arctan2(np.linalg.norm(cross),dot)
     return dot, cross, angle
+
+def nr2letter(n):
+    """
+    Maps natural numbers to
+    ['0','1',...,'9','A','B',...,'Z']
+    """
+    if n < 10:
+        return str(n)
+    elif n <= (ord('Z') - ord('A') + 10):
+        ch = chr(ord('A') + n - 10)
+    else:
+        raise NotImplementedError('Cannot convert number to character.'
+                                  'You have to many sites, sorry!')
+
+def lattice2nr((ix,iy,isite),size,nsites):
+    """
+    Convert a lattice point into a number corresponding
+    to its position in the corresponding flattened (1D) array
+    representing the lattice
+    """
+    return ((iy*size[0] + ix)*nsites + isite)
+
+def nr2base26(nr):
+    if isinstance(nr,str):
+        nr = int(nr)
+    if not isinstance(nr,int):
+        raise TypeError('nr must be int or str')
+
+    alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    base26 = ''
+    while nr:
+        nr, i = divmod(nr,26)
+        base26 = alphabet[i] + base26
+    base26 = base26 or 'A'
+    if len(base26) == 1:
+        return 'A' + base26
+    else:
+        return base26
+
+def nr2base16(nr):
+    if isinstance(nr,str):
+        nr = int(nr)
+    if not isinstance(nr,int):
+        raise TypeError('nr must be int or str')
+
+    alphabet = '0123456789ABCDEF'
+    base16 = ''
+    while nr:
+        nr, i = divmod(nr,16)
+        base16 = alphabet[i] + base16
+    return base16
 
 class LGH(object):
     """
@@ -155,7 +206,11 @@ class LGH(object):
         """Add a Cluster Group"""
         self.clustergroup_list.extend(clustergroup_list)
 
-    def save(self, save_atoms = True, overwrite_atoms = True):
+    def save(self,
+             cluster_fname = None,
+             save_atoms = True,
+             overwrite_atoms = True,
+             ):
         """
         Save the Cluster Expansion definition and components
         """
@@ -178,17 +233,24 @@ class LGH(object):
                              ('{} '*self.nspecies)).format(*self.get_species_names())
                              +'\n')
 
+        general_outf.close()
 
-        general_outf.write('\nnclusters : {}\n'.format(self.nclusters))
-        general_outf.write('cluster groups :'+'\n')
+        if cluster_fname is None:
+            cluster_fname = os.path.join(self.directory,'clusters')
+        else:
+            cluster_fname = os.path.abspath(cluster_fname)
+
+        cluster_file = open(cluster_fname,'w')
+
+        cluster_file.write('nclusters : {}\n'.format(self.nclusters))
+        cluster_file.write('cluster groups :'+'\n')
         for clustergroup in self.clustergroup_list:
-            general_outf.write( ('{} : '
+            cluster_file.write( ('{} : '
                                  + '{} '*clustergroup.nclusters).format(
                                      clustergroup.name,
                                      *clustergroup.clusters)+
                                      '\n')
-        general_outf.close()
-
+        cluster_file.close()
 
         # Save base_cell
         if not os.path.isdir(os.path.join(self.directory,'base')):
@@ -237,6 +299,10 @@ class LGH(object):
                 fcounts.write(('{:d} ' * self.nclusters).format(
                                  *config.cluster_counts) + '\n')
 
+
+    # def load(self,
+    #          directory=None):
+    #     pass
     def get_atoms(self,iconf):
         return self.config_list[iconf].get_atoms()
 
@@ -257,7 +323,7 @@ class LGH(object):
         self.config_list = sorted(self.config_list,
                                   key = lambda x:(x.size[0],
                                                   x.size[1],
-                                                  int(x._get_number())
+                                                  x.get_code(),
                                                   )
                                   )
 
@@ -587,7 +653,7 @@ class Config(object):
 
         self.directory = os.path.join(self.lgh.directory,
                                       '{0:d}x{1:d}'.format(*self.size),
-                                      self._get_number()
+                                      self.get_code())
 
     def return_atoms(self):
         """Builds the atoms object that corresponds to the configuration
@@ -712,8 +778,42 @@ class Config(object):
         self.e = self.get_energy()
 
     def __eq__(self,other):
-        ## TODO build this
-        return False
+        if not isinstance(other,Config):
+            raise NotImplementedError('Can only compare config to config')
+        if not self.size == other.size:
+            return False
+        elif not any(self.matrix - other.matrix):
+            return True
+        else:
+            return False
+
+    def __ne__(self,other):
+        return not self == other
+
+    def __lt__(self,other):
+        if not isinstance(other,Config):
+            raise NotImplementedError('Can only compare config to config')
+        if self.size < other.size:
+            return True
+        elif self.size > other.size:
+            return False
+        if (self.get_species_count().sum() <
+            other.get_species_count().sum()):
+            return True
+        elif (self.get_species_count().sum() >
+            other.get_species_count().sum()):
+            return False
+        return (list(self.matrix.flatten()) <
+                list(other.matrix.flatteh()))
+
+    def __gt__(self,other):
+        return not any([self == other, self < other])
+
+    def __le__(self,other):
+        return any([self == other, self < other])
+
+    def __ge__(self,other):
+        return any([self == other, self > other])
 
     def __repr__(self):
         rep = '[CONF] ({0}x{1})\n'.format(*self.size)
@@ -724,29 +824,39 @@ class Config(object):
                                                  coord.offset[1])
         return rep
 
-    def _get_number(self):
+    def get_code(self):
         """
-        Returns a number identifies the config in the lgh
+        Returns a code identifies the config in the lgh
         """
-        num = ''
-        for iy in xrange(self.size[1]):
-            for ix in xrange(self.size[0]):
-                for isite in xrange(self.lgh.nsites):
-                    n = self.matrix[ix,iy,isite]
-                    if n <= 9:
-                        ch = str(n)
-                    elif n <= (ord('Z') - ord('A') + 10):
-                        ch = chr(ord('A') + n - 10)
-                    else:
-                        raise NotImplementedError('I ran out of letters'
-                                                  ' for the species...'
-                                                  ' 35 is too many...')
-                    num = ch + num
-        return num
 
+        ord_species_coords = sorted(self.species_coords,
+            key = lambda x: (x[0],
+                             x[1].offset[0],
+                             x[1].offset[1],
+                             x[1].name)
+                                   )
 
+        code = '_'.join([x[0] for x in ord_species_coords]) + '_'
 
+        for coord in [x[1] for x in ord_species_coords]:
+            code += nr2letter(coord.offset[0])
+            code += nr2letter(coord.offset[1])
+            code += nr2letter(self.lgh.get_site_names().index(coord.name))
 
+        # for iy in xrange(self.size[1]):
+        #     for ix in xrange(self.size[0]):
+        #         for isite in xrange(self.lgh.nsites):
+        #             n = self.matrix[ix,iy,isite]
+        #             if n <= 9:
+        #                 ch = str(n)
+        #             elif n <= (ord('Z') - ord('A') + 10):
+        #                 ch = chr(ord('A') + n - 10)
+        #             else:
+        #                 raise NotImplementedError('I ran out of letters'
+        #                                           ' for the species...'
+        #                                           ' 35 is too many...')
+        #             code = ch + code
+        return code
 
 class BaseCell(object):
     """ Class that contains the basic unit cell for the skeleton structure of the LGH.
@@ -803,6 +913,20 @@ class Adsorbate(object):
         self.eini = binding_energy
         self.e = binding_energy
 
+    def __eq__(self,other):
+        return self.name == other.name
+    def __ne__(self,other):
+        return not self.__eq__(other)
+    def __lt__(self,other):
+        return self.name < other.name
+    def __gt__(self,other):
+        return not any([self == other, self < other])
+    def __le__(self,other):
+        return any([self == other, self < other])
+    def __ge__(self,other):
+        return any([self == other, self > other])
+
+
 class Site(object):
     """Class that defines a site in the BaseCell.
     Heavily inspired in the kmos.types.Site class.
@@ -821,11 +945,15 @@ class Site(object):
         else:
             self.pos = np.array([0., 0., 0.])
 
-
     def __repr__(self):
         return '[SITE] {0:12s} {2:s} {3:s}'.format(self.name,
                                                    self.pos,
                                                    self.tags)
+
+    def __eq__(self,other):
+        return self.name == other.name
+
+
 
 class BareCoord(object):
     """
@@ -914,8 +1042,13 @@ class ClusterGroup(object):
                 self.clusters.append(cluster_def)
             else:
                 self.clusters.append(Cluster(cluster_def))
-
         self.nclusters = len(self.clusters)
+        mult = list(set([x.mult for x in self.clusters]))
+        if len(mult) > 1:
+            raise ValueError('ClusterGroup can only contain clusters '
+                             'with the same multiplcity')
+        self.mult = mult[0]
+
 
 class LGHOptimizer(object):
     """
