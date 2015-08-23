@@ -1,7 +1,8 @@
 from jlgh import DIM
 import numpy as np
+from ase.constraints import FixAtoms, FixedLine, FixCartesian
 import os
-from jlgh.lgh import LGH, Adsorbate, Site, BareCoord, parse_spec_coord
+from jlgh.lgh import parse_spec_coord
 from jlgh.utils import nr2letter
 
 class Config(object):
