@@ -82,6 +82,12 @@ class LGH(object):
     """
 
     def __init__(self,**kwargs):
+
+        if 'name' in kwargs.keys():
+            self.name = kwargs['name']
+        else:
+            self.name = 'lgh'
+
         if 'base_cell' in kwargs.keys():
             self.base_cell = kwargs['base_cell']
 
@@ -135,7 +141,7 @@ class LGH(object):
         self.clustergroup_list.extend(clustergroup_list)
 
     def save(self,
-             cluster_fname = None,
+             # cluster_fname = None,
              save_atoms = True,
              overwrite_atoms = True,
              ):
@@ -145,7 +151,8 @@ class LGH(object):
         if not os.path.isdir(self.directory):
             os.mkdir(self.directory)
 
-        general_outf_name = os.path.join(self.directory,self.name)
+        general_outf_name = os.path.join(self.directory,
+                                         '{}.lgh'.format(self.name))
         general_outf = open(general_outf_name,'w')
 
         general_outf.write('#'*72+'\n')
@@ -160,15 +167,17 @@ class LGH(object):
         general_outf.write(('species : ' +
                              ('{} '*self.nspecies)).format(*self.get_species_names())
                              +'\n')
+        general_outf.write('\n')
+        # general_outf.close()
 
-        general_outf.close()
+        # if cluster_fname is None:
+        #     cluster_fname = os.path.join(self.directory,'clusters')
+        # else:
+        #     cluster_fname = os.path.abspath(cluster_fname)
 
-        if cluster_fname is None:
-            cluster_fname = os.path.join(self.directory,'clusters')
-        else:
-            cluster_fname = os.path.abspath(cluster_fname)
+        # cluster_file = open(cluster_fname,'w')
 
-        cluster_file = open(cluster_fname,'w')
+        cluster_file = general_outf
 
         cluster_file.write('nclusters : {}\n'.format(self.nclusters))
         cluster_file.write('cluster groups :'+'\n')
@@ -178,7 +187,9 @@ class LGH(object):
                                      clustergroup.name,
                                      *clustergroup.clusters)+
                                      '\n')
-        cluster_file.close()
+
+        cluster_file.write('\n')
+        # cluster_file.close()
 
         # Save base_cell
         if not os.path.isdir(os.path.join(self.directory,'base')):
@@ -213,6 +224,8 @@ class LGH(object):
                 ads_E0.write('{0:.12f}\n'.format(ads.eini))
 
         # Save configs
+        config_file = general_outf
+        config_file.write('nconf = {}\n'.format(self.nconf))
         for config in self.config_list:
             if not os.path.isdir(config.directory):
                 os.makedirs(config.directory)
@@ -223,14 +236,38 @@ class LGH(object):
                         not os.path.exists(config_trajf_name)]):
                     ase.io.write(config_trajf_name,
                                  config.return_atoms())
+            with open(os.path.join(config.directory,'config'),'w') as fconf:
+                fconf.write('{}'.format(config))
             with open(os.path.join(config.directory,'counts'),'w') as fcounts:
+                fcounts.write('# ')
+                fcounts.write(('{} ' * self.nclusters).format(
+                                 *[x.name for x in self.clustergroup_list])
+                                 + '\n')
+
                 fcounts.write(('{:d} ' * self.nclusters).format(
                                  *config.cluster_counts) + '\n')
+            if hasattr(config,'eref') and config.eref is not None:
+                with open(os.path.join(config.directory,'eref'),'w') as feref:
+                    feref.write('{}\n'.format(config.eref))
+            config_file.write('{}\n'.format(config.directory))
+        config_file.close()
 
+    def load(self,
+             name = 'lgh',
+             scan_configs=True,
+             ):
+        """Loads a lgh configuration
 
-    # def load(self,
-    #          directory=None):
-    #     pass
+           Arguments:
+           ---------
+
+           name (str): name of lgh to read
+
+           scan_config (bool) : If true, configurations will be search
+               in the default folders and loaded
+
+        """
+        pass
 
     def print_cluster_energies(self):
         """ Print a review of all clusters' energies"""
