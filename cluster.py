@@ -2,7 +2,7 @@
 Defines the Cluster and ClusterGroup classes
 """
 from jlgh import DIM
-from jlgh.lgh import parse_spec_coord
+from jlgh.types import parse_spec_coord
 
 class Cluster(object):
     """

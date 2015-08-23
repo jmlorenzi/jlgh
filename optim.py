@@ -1,8 +1,7 @@
 import numpy as np
 import scipy
 
-from jlgh.lgh import LGH
-from jlgh.config import Config
+from jlgh.types import LGH, Config
 
 
 class LGHOptimizer(object):

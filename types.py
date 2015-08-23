@@ -7,7 +7,7 @@ from struformat.molcrys import cluster
 import time, scipy, sys, os, glob
 
 from jlgh import DIM, TOL_ANGLE, TOL_DIST
-from jlgh.utils import get_dot_cross_angle, project_to_plane
+from jlgh.utils import get_dot_cross_angle, project_to_plane, nr2letter
 
 class LGH(object):
     """

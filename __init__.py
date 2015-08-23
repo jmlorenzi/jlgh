@@ -18,6 +18,5 @@ TOL_DIST = 1e-5
 
 zvect = np.array([0.,0.,1.])
 
-from jlgh.lgh import LGH, BaseCell, Adsorbate, Site, BareCoord
+from jlgh.types import LGH, BaseCell, Adsorbate, Site, BareCoord, Config
 from jlgh.cluster import Cluster, ClusterGroup
-from jlgh.config import Config
