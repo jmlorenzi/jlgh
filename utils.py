@@ -2,6 +2,9 @@
 Set of utility functions
 """
 
+from jlgh import TOL_ANGLE, TOL_DIST
+import numpy as np
+
 def get_dot_cross_angle(v1,v2):
     """
     Wraps the operations of geting angles
@@ -62,3 +65,8 @@ def nr2base16(nr):
         nr, i = divmod(nr,16)
         base16 = alphabet[i] + base16
     return base16
+
+def project_to_plane(array,v1,v2):
+    a1 = np.dot(array,v1/np.linalg.norm(v1)) * v1 / np.linalg.norm(v1) ** 2
+    a2 = np.dot(array,v2/np.linalg.norm(v2)) * v2 / np.linalg.norm(v2) ** 2
+    return a1 + a2
