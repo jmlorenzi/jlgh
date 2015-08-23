@@ -6,6 +6,9 @@ import numpy as np
 from struformat.molcrys import cluster
 import time, scipy, sys, os, glob
 
+from jlgh import DIM, TOL_ANGLE, TOL_DIST
+from jlgh.utils import get_dot_cross_angle, project_to_plane
+
 class LGH(object):
     """
     Main class of the module, contains all other elements that help you
@@ -451,11 +454,21 @@ class LGH(object):
 
         bare_surf = self.base_cell.atoms * [size[0],size[1],1]
 
+        # As a failure check we will enforce that atoms constrained
+        # in the elemetary cell need match very well the atoms in the
+        # case being tested
+        const_ind = []
+        if bare_surf.constraints:
+            for const in bare_surf.constraints:
+                const_ind.extend(list(const.index))
+
         max_min_dist = 0.0 # Maximun value of the minumum distance
                            # between atoms of natoms and bare_surf
-        for nat in natoms:
-            dists = [(sat.position[2] - nat.position[2]) for sat in
-                      bare_surf if nat.symbol == sat.symbol]
+        for isat, sat in enumerate(bare_surf):
+            if not isat in const_ind:
+                continue
+            dists = [(sat.position[2] - nat.position[2]) for nat in
+                      natoms if nat.symbol == sat.symbol]
             if dists:
                 dz_min = min(dists, key = lambda x:abs(x))
             else:
@@ -466,17 +479,9 @@ class LGH(object):
         if abs(max_min_dist) > TOL_DIST:
             print("Correcting surface for z displacement by {0} A".format(
                                                         max_min_dist))
-            natoms.translate(np.array([0.,0.,max_min_dist]))
-
-        # As a failure check we will enforce that atoms constrained
-        # in the elemetary cell need match very well the atoms in the
-        # case being tested
-        const_ind = []
-        if bare_surf.constraints:
-            for const in bare_surf.constraints:
-                const_ind.extend(list(const.index))
-
-        from ase.visualize import view
+            pos0 = natoms.get_positions()
+            pos0 += np.array([0.,0.,max_min_dist])
+            natoms.positions = pos0
 
         for isat, sat in enumerate(bare_surf):
             num_dists = [ (i,np.linalg.norm(sat.position-nat.position)) for
@@ -484,7 +489,7 @@ class LGH(object):
             imin, dmin = min(num_dists, key = lambda x:x[1])
             if (isat in const_ind) and (dmin > TOL_DIST):
                 raise ValueError('Constrained substrate atoms do not'
-                                 ' match surface structure by {}'.format(dmin))
+                                 ' match surface structure by {} for at {}'.format(dmin,imin))
             natoms.pop(imin)
 
     def _sort_fragments(self,size,natoms,fragments):
