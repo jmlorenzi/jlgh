@@ -578,6 +578,32 @@ class LGH(object):
 
         return config_description
 
+    def max_error(self):
+        maerr = 0
+        merr = 0
+        imerr = -1
+        for ic, config in enumerate(self.config_list):
+            err = config.get_energy() - config.eref
+            if abs(err) > maerr:
+                maerr=abs(err)
+                merr = err
+                imerr = ic
+        return merr, imerr
+
+    def max_epa(self):
+        """ Calculate the maximum error per adsorbate"""
+        maepa = 0
+        mepa = 0
+        imepa = -1
+        for ic, config in enumerate(self.config_list):
+            epa = (config.get_energy() - config.eref) / float(sum(config.species_counts))
+            if abs(epa) > maepa:
+                maepa=abs(epa)
+                mepa = epa
+                imepa = ic
+        return mepa, imepa
+
+
 class BaseCell(object):
     """ Class that contains the basic unit cell for the skeleton structure of the LGH.
     In our standard use case, this means the surface
