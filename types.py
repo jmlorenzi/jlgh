@@ -753,7 +753,7 @@ class Config(object):
             else:
                 spec, coord = spec_coord
             for i in xrange(DIM):
-                if coord.offset[i] >= DIM:
+                if coord.offset[i] >= self.size[i]:
                     raise NotImplementedError(
                 'Coordinate {0}{1} falls outside configuration'.format(
                     coord.name,coord.offset))
