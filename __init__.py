@@ -14,7 +14,7 @@ DIM = 2  # We use this as a parameter, but probably will always be fixed
 DELTA_H_SMALL = 1.0 # Default height over the surface to place adsorbates
 
 TOL_ANGLE = 1e-9
-TOL_DIST = 1e-6
+TOL_DIST = 1e-5
 
 zvect = np.array([0.,0.,1.])
 
