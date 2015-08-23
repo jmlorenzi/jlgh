@@ -373,7 +373,7 @@ class LGH(object):
             chisq += (config.get_energy() - config.eref)**2
         return chisq
 
-    def read_atoms(self,atoms):
+    def read_atoms(self,atoms,verbose = 0):
         """ Takes an atoms object and identifies the
         corresponding configuration associated to it
         Returns False in failure
@@ -384,12 +384,17 @@ class LGH(object):
         # We do not want to mess with the original atoms
         natoms = atoms.copy()
 
-        self._rotate_to_elementary_cell(natoms)
+        done_rotation = self._rotate_to_elementary_cell(natoms, verbose=verbose)
+        if not done_rotation:
+            return False
 
         size = self._get_atoms_size(natoms)
-        print('Found that atoms match a ({0}x{1}) unit cell'.format(*size))
+        if not size:
+            return False
+        elif verbose:
+            print('Found that atoms match a ({0}x{1}) unit cell'.format(*size))
 
-        self._remove_surface(natoms,size)
+        self._remove_surface(natoms,size, verbose=verbose)
 
         # spliting geometry using C. Schober's tool
         fragments = cluster(natoms)
@@ -398,13 +403,14 @@ class LGH(object):
         config_description = self._sort_fragments(size,natoms,fragments)
 
         conf = Config(size,config_description)
-        print('Identified configuration')
-        print(conf)
+        if verbose:
+            print('Identified configuration')
+            print(conf)
+
         self.add_config(conf)
+        return conf
 
-        return True
-
-    def _rotate_to_elementary_cell(self,natoms):
+    def _rotate_to_elementary_cell(self,natoms, verbose=0):
         """ Rotates an atom object so its vectors
         are parallel to those of the elementary unit cell.
 
@@ -445,7 +451,8 @@ class LGH(object):
 
         # Perform the final rotation!
         if abs(angle) > TOL_ANGLE:
-            print('Rotating {} rad around x axis'.format(angle))
+            if verbose:
+                print('Rotating {} rad around x axis'.format(angle))
             natoms.rotate(xparall / np.linalg.norm(xparall), angle, rotate_cell = True)
 
         # And explicity again check all angles
@@ -481,7 +488,7 @@ class LGH(object):
 
         return (nx,ny)
 
-    def _remove_surface(self,natoms,size):
+    def _remove_surface(self, natoms, size, verbose=0):
         """
         Tries to match the predicted surface to the
         surface contained in the atoms object and removes
@@ -514,7 +521,8 @@ class LGH(object):
                 max_min_dist = dz_min
 
         if abs(max_min_dist) > TOL_DIST:
-            print("Correcting surface for z displacement by {0} A".format(
+            if verbose:
+                print("Correcting surface for z displacement by {0} A".format(
                                                         max_min_dist))
             pos0 = natoms.get_positions()
             pos0 += np.array([0.,0.,max_min_dist])
