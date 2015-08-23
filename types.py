@@ -940,6 +940,9 @@ class Config(object):
     def update_energy(self):
         self.e = self.get_energy()
 
+    def set_reference_energy(self,energy):
+        self.eref = energy
+
     def __eq__(self,other):
         if not isinstance(other,Config):
             raise NotImplementedError('Can only compare config to config')
@@ -979,12 +982,14 @@ class Config(object):
         return any([self == other, self > other])
 
     def __repr__(self):
-        rep = '[CONF] ({0}x{1})\n'.format(*self.size)
+        rep = '[CONF] ({0}x{1}):\n'.format(*self.size)
         for spec, coord in self.species_coords:
-            rep += '  {0}@{1}.({2},{3},0)\n'.format(spec,
+            rep += '{0}@{1}.({2},{3},0)\n'.format(spec,
                                                  coord.name,
                                                  coord.offset[0],
                                                  coord.offset[1])
+        # if hasattr(self,eref):
+        #     rep += '\nE_ref = {0}'.format(self.eref)
         return rep
 
     def get_code(self):
