@@ -799,10 +799,10 @@ class Config(object):
         self.lgh = lgh
 
     def get_species(self):
-        if self.lgh:
-            return self.lgh.get_species_names()
-        else:
-            return sorted(list(set([spec_coord[0]
+        """
+        Return the species present in the config
+        """
+        return sorted(list(set([spec_coord[0]
                         for spec_coord in self.species_coords])))
 
     def get_sites(self):
@@ -813,8 +813,8 @@ class Config(object):
                     for spec_coord in self.species_coords])))
 
     def _count_species(self):
-        species_list = self.get_species()
-        sites_list = self.get_sites()
+        species_list = self.lgh.get_species_names()
+        sites_list = self.lgh.get_site_names()
         count = []
         for spec in species_list:
             for site in sites_list:

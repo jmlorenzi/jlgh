@@ -3,7 +3,6 @@ import scipy
 
 from jlgh.types import LGH, Config
 
-
 class LGHOptimizer(object):
     """
     The object that optimizes the LGH!!
@@ -14,18 +13,28 @@ class LGHOptimizer(object):
                  opt_bindings = False,
                  # exclude_species = None,
                  # exclude_clusters = None,
-                 # exclude_confs = None,
+                 exclude_confs = None,
                  ):
 
         self.lgh = LGH
         self.opt_surf_ene = opt_surf_ene
         self.opt_bindings = opt_bindings
-        self.nconf = self.lgh.nconf
+
+        if exclude_confs:
+            self.config_list = [config for i,config in
+                                enumerate(self.lgh.config_list)
+                                if i not in exclude_confs]
+        else:
+            self.config_list = self.lgh.config_list
+
+        self.nconf = len(self.config_list)
+
+
         e0_list = []
         a_list = []
 
         if opt_surf_ene and not opt_bindings:
-            raise ValueError('Optimization of opt_surf_ene must be False if'
+            raise ValueError('opt_surf_ene must be False if'
                              ' opt_bindings is False')
 
         fix_cluster_enes = np.array([ self.lgh.cluster_energies[i] for i in
@@ -33,15 +42,12 @@ class LGHOptimizer(object):
         free_cluster_enes = [ self.lgh.cluster_energies[i] for i in
                                        xrange(self.lgh.nclusters) if not
                                       (i in self.lgh.fixed_cluster_indices)]
-
-
-        for conf in self.lgh.config_list:
+        for conf in self.config_list:
             fix_counts = np.array([conf.cluster_counts[i] for i in
                                    self.lgh.fixed_cluster_indices])
             free_counts = [conf.cluster_counts[i] for i
                            in xrange(self.lgh.nclusters) if not
                            (i in self.lgh.fixed_cluster_indices)]
-
             a_conf = []
             e0_conf = 0.0
             if not opt_surf_ene:
@@ -49,6 +55,11 @@ class LGHOptimizer(object):
             else:
                  a_conf.append(np.prod(conf.size))
             if not opt_bindings:
+                # print('spec_counts shape')
+                # print(conf.species_counts.shape)
+                # print('be shape')
+                # print(self.lgh.binding_energies.shape)
+
                 e0_conf += np.dot(self.lgh.binding_energies,
                                   conf.species_counts)
             else:
@@ -59,7 +70,6 @@ class LGHOptimizer(object):
 
             e0_list.append(e0_conf)
             a_list.append(a_conf)
-
 
         x = []
         if opt_surf_ene:
@@ -110,7 +120,7 @@ class LGHOptimizer(object):
         chisq = 0.
         for i in xrange(self.nconf):
             chisq += ((self.e0[i] + np.dot(self.a[i],x)) \
-                      - self.lgh.config_list[i].eref)**2
+                      - self.config_list[i].eref)**2
         return chisq
 
     def run(self,method = 'Nelder-Mead', tol = 0.001,verbose=0):
@@ -142,7 +152,7 @@ class LGHOptimizer(object):
             #     # print('Maxerror : {} (conf {})'.format(maxerr,iconf))
         else:
             print('Could not converge!!')
-
+        return res.success
 
     def update_lgh(self,x):
         """ Update the lgh whith the result of optimization
@@ -158,3 +168,23 @@ class LGHOptimizer(object):
             if not ie in self.lgh.fixed_cluster_indices:
                 self.lgh.cluster_energies[ie] = x[icop]
                 icop+=1
+
+
+def cross_validation_score(lgh,tol = 1e-5, opt_surf_ene = False, opt_bindings = False):
+    """ Calculates the Cross Validation (CV) score for a given lgh"""
+    score = 0.0
+    initial_guess = lgh.cluster_energies.copy()
+
+    for iconf,conf in enumerate(lgh.config_list):
+        lgh.cluster_energies = initial_guess.copy()
+        opt = LGHOptimizer(lgh,
+                           exclude_confs=[iconf,],
+                           opt_surf_ene=opt_surf_ene,
+                           opt_bindings=opt_bindings)
+        if opt.run(verbose = 0, tol = tol):
+            score += (conf.get_energy()-conf.eref)**2
+        else:
+            print('Optimization failed for configuration {}'.format(iconf))
+            # print(conf)
+            # raise RuntimeError()
+    return np.sqrt(score/(iconf+1))

@@ -52,3 +52,30 @@ optim.run(verbose=2)
 print(lgh.base_energy)
 print(lgh.binding_energies)
 print(lgh.cluster_energies)
+
+for config in lgh.config_list:
+    print(config)
+    print('Elgh = {0:12f} - Eref = {1:12f}'.format(config.get_energy(),config.eref))
+
+# print("#####")
+# print("Skipping configurations")
+# print('')
+
+# for ic, config in enumerate(lgh.config_list):
+#     print('Skipping conf {}:'.format(ic))
+#     print(config)
+
+#     opt = LGHOptimizer(lgh,exclude_confs = [ic,])
+#     for conf2 in opt.config_list:
+#         print(conf2)
+#         print('Elgh = {0:12f} - Eref = {1:12f}'.format(conf2.get_energy(),conf2.eref))
+#         print('')
+
+#     # raise SystemExit()
+#     opt.run(verbose = 1)
+#     # opt.run(verbose = 1)
+#     # for conf2 in lgh.config_list:
+#     #     print(config)
+#     #     print('Elgh = {0:12f} - Eref = {1:12f}'.format(conf2.get_energy(),conf2.eref))
+
+print('CV = {}'.format(cross_validation_score(lgh,tol=1e6)))

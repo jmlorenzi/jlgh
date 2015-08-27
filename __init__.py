@@ -20,3 +20,4 @@ zvect = np.array([0.,0.,1.])
 
 from jlgh.types import LGH, BaseCell, Adsorbate, Site, BareCoord, Config
 from jlgh.cluster import Cluster, ClusterGroup
+from jlgh.optim import LGHOptimizer, cross_validation_score
