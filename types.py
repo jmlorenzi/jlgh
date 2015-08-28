@@ -397,12 +397,14 @@ class LGH(object):
         self._remove_surface(natoms,size, verbose=verbose)
 
         # spliting geometry using C. Schober's tool
-        fragments = cluster(natoms)
+        if len(natoms):
+            fragments = cluster(natoms)
+            # And sort out which fragments are where adsorbed
+            config_description = self._sort_fragments(size,natoms,fragments)
+            conf = Config(size,config_description)
+        else:
+            conf = Config(size,[])
 
-        # And sort out which fragments are where adsorbed
-        config_description = self._sort_fragments(size,natoms,fragments)
-
-        conf = Config(size,config_description)
         if verbose:
             print('Identified configuration')
             print(conf)

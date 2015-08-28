@@ -126,7 +126,11 @@ class LGHOptimizer(object):
     def run(self,method = 'Nelder-Mead', tol = 0.001,verbose=0):
         x0 = self.x.copy()
         res = scipy.optimize.minimize(self.err,x0,
-                                      method=method,tol=tol)
+                                      method=method,
+                                      tol=tol,
+                                      options = {'maxfev' : 1000000,
+                                                 'maxiter' : 1000000},
+                                      )
         if res.success:
             self.update_lgh(res.x)
             if verbose:
